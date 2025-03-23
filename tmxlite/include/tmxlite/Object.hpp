@@ -30,6 +30,7 @@ source distribution.
 #include <tmxlite/Config.hpp>
 #include <tmxlite/Property.hpp>
 #include <tmxlite/Types.hpp>
+#include <tmxlite/Parsable.hpp>
 
 #include <string>
 #include <vector>
@@ -77,8 +78,10 @@ namespace tmx
     rectangular by default. Since version 1.0 Objects also
     support Text nodes.
     */
-    class TMXLITE_EXPORT_API Object final
+    class TMXLITE_EXPORT_API Object final : public Parsable 
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map* map) override;
     public:
         enum class Shape
         {
@@ -96,7 +99,7 @@ namespace tmx
         \brief Attempts to parse the given xml node and
         read the Object properties if it is valid.
         */
-        void parse(const cJSON&, Map*);
+        bool parse(const cJSON&, Map*) override;
 
         /*!
         \brief Returns the unique ID of the Object
@@ -196,6 +199,7 @@ namespace tmx
         std::uint32_t m_UID;
         std::string m_name;
         std::string m_class;
+        std::string m_template;
         Vector2f m_position;
         FloatRect m_AABB;
         float m_rotation;

@@ -51,165 +51,143 @@ Object::Object()
 
 }
 
-//public
-void Object::parse(const cJSON& node, Map* map)
+bool Object::parseChild(const struct cJSON &child, tmx::Map* map)
 {
-    std::string attribString = node.string;
-    if (attribString != "object")
-    {
-        Logger::log("This not an Object node, parsing skipped.", Logger::Type::Error);
-        return;
-    }
-
-    m_UID = node.attribute("id").as_int();
-    m_name = node.attribute("name").as_string();
-
-    m_class = node.attribute("type").as_string();
-    if (m_class.empty())
-    {
-        m_class = node.attribute("class").as_string();
-    }
-    
-    m_position.x = node.attribute("x").as_float();
-    m_AABB.left = m_position.x;
-    m_position.y = node.attribute("y").as_float();
-    m_AABB.top = m_position.y;
-    m_AABB.width = node.attribute("width").as_float();
-    m_AABB.height = node.attribute("height").as_float();
-    m_rotation = node.attribute("rotation").as_float();
-    m_visible = node.attribute("visible").as_bool(true);
-
-    m_tileID = node.attribute("gid").as_uint();
-
-    static const std::uint32_t mask = 0xf0000000;
-    m_flipFlags = ((m_tileID & mask) >> 28);
-    m_tileID = m_tileID & ~mask;
-
-    for (const auto& child : node.children())
-    {
-        attribString = child.name();
-        if (attribString == "properties")
-        {
-            for (const auto& p : child.children())
-            {
-                m_properties.emplace_back();
-                m_properties.back().parse(p);
-            }
+    std::string attribString = child.string;
+    if(attribString == "id") {
+        m_UID = int(child.valuedouble);
+    } else if(attribString == "name") {
+        m_name = child.valuestring;
+    } else if(attribString == "type" || attribString == "class") {
+        m_class = child.valuestring;
+    } else if(attribString == "x") {
+        m_position.x = float(child.valuedouble);
+        m_AABB.left = m_position.x;
+    } else if(attribString == "y") {
+        m_position.y = float(child.valuedouble);
+        m_AABB.top = m_position.y;
+    } else if(attribString == "width") {
+        m_AABB.width = float(child.valuedouble);
+    } else if(attribString == "height") {
+        m_AABB.height = float(child.valuedouble);
+    } else if(attribString == "rotation") {
+        m_rotation = float(child.valuedouble);
+    } else if(attribString == "visible") {
+        m_visible = std::string(child.valuestring) == "true";
+    } else if(attribString == "gid") {
+        m_tileID = int(child.valuedouble);
+    } else if (attribString == "properties") {
+        for(cJSON *propNode = child.child; propNode != nullptr; propNode = propNode->next) {
+            m_properties.emplace_back();
+            m_properties.back().parse(*propNode);
         }
-        else if (attribString == "ellipse")
-        {
-            m_shape = Shape::Ellipse;
-        }
-        else if (attribString == "point")
-        {
-            m_shape = Shape::Point;
-        }
-        else if (attribString == "polygon")
-        {
-            m_shape = Shape::Polygon;
-            parsePoints(child);
-        }
-        else if (attribString == "polyline")
-        {
-            m_shape = Shape::Polyline;
-            parsePoints(child);
-        }
-        else if (attribString == "text")
-        {
-            m_shape = Shape::Text;
-            parseText(child);
-        }
-    }
-
-    //parse templates last so we know which properties
-    //ought to be overridden
-    std::string templateStr = node.attribute("template").as_string();
-    if (!templateStr.empty() && map)
-    {
-        parseTemplate(templateStr, map);
+    } else if (attribString == "ellipse") {
+        m_shape = Shape::Ellipse;
+    } else if (attribString == "point") {
+        m_shape = Shape::Point;
+    } else if (attribString == "polygon") {
+        m_shape = Shape::Polygon;
+        parsePoints(child);
+    } else if (attribString == "polyline") {
+        m_shape = Shape::Polyline;
+        parsePoints(child);
+    } else if (attribString == "text") {
+        m_shape = Shape::Text;
+        parseText(child);
+    } else if(attribString == "template") {
+        m_template = child.valuestring;
     }
 }
 
-//private
-void Object::parsePoints(const pugi::xml_node& node)
+//public
+bool Object::parse(const cJSON& node, Map* map)
 {
-    if (node.attribute("points"))
-    {
-        std::string pointlist = node.attribute("points").as_string();
-        std::stringstream stream(pointlist);
-        std::vector<std::string> points;
-        std::string pointstring;
-        while (std::getline(stream, pointstring, ' '))
-        {
-            points.push_back(pointstring);
-        }
+    std::string attribString = node.string;
+    if (attribString != "object") {
+        Logger::log("This not an Object node, parsing skipped.", Logger::Type::Error);
+        return false;
+    }
 
-        //parse each pair into sf::vector2f
-        for (unsigned int i = 0; i < points.size(); i++)
-        {
-            std::vector<float> coords;
-            std::stringstream coordstream(points[i]);
-
-            float j;
-            while (coordstream >> j)
-            {
-                coords.push_back(j);
-                //TODO this should really ignore anything non-numeric
-                if (coordstream.peek() == ',')
-                {
-                    coordstream.ignore();
-                }
-            }
-            m_points.emplace_back(coords[0], coords[1]);
+    bool retval = Parsable::parse(node, map);
+    if(retval) {
+        static const std::uint32_t mask = 0xf0000000;
+        m_flipFlags = ((m_tileID & mask) >> 28);
+        m_tileID = m_tileID & ~mask;
+        if(!m_template.empty()) {
+            //parse templates last so we know which properties
+            //ought to be overridden
+            parseTemplate(m_template, map);
         }
     }
-    else
+    return retval;
+}
+
+//private
+void Object::parsePoints(const cJSON& node)
+{
+    for(cJSON *pointNode = node.child; pointNode != nullptr; pointNode = pointNode->next) {
+        float x = 0, y = 0;
+        for(cJSON *pointAttrNode = pointNode->child; pointAttrNode != nullptr; pointAttrNode = pointAttrNode->next) {
+            std::string attrName = pointAttrNode->string;
+            if(attrName == "x") {
+                x = float(pointAttrNode->valuedouble);
+            } else if(attrName == "y") {
+                y = float(pointAttrNode->valuedouble);
+            }
+        }
+        m_points.push_back({x, y});
+    }
+    if(m_points.empty())
     {
         Logger::log("Points for polygon or polyline object are missing", Logger::Type::Warning);
     }
 }
 
-void Object::parseText(const pugi::xml_node& node)
+void Object::parseText(const cJSON& node)
 {
-    m_textData.bold = node.attribute("bold").as_bool(false);
-    m_textData.colour = colourFromString(node.attribute("color").as_string("#FFFFFFFF"));
-    m_textData.fontFamily = node.attribute("fontfamily").as_string();
-    m_textData.italic = node.attribute("italic").as_bool(false);
-    m_textData.kerning = node.attribute("kerning").as_bool(true);
-    m_textData.pixelSize = node.attribute("pixelsize").as_uint(16);
-    m_textData.strikethough = node.attribute("strikeout").as_bool(false);
-    m_textData.underline = node.attribute("underline").as_bool(false);
-    m_textData.wrap = node.attribute("wrap").as_bool(false);
+    for(cJSON *child = node.child; child != nullptr; child = child->next) {
+        std::string name = child->string;
+        if(name == "bold") {
+            m_textData.bold = std::string(child->valuestring) == "true";
+        } else if(name == "color") {
+            m_textData.colour = colourFromString(child->valuestring);
+        } else if(name == "fontfamily") {
+            m_textData.fontFamily = child->valuestring;
+        } else if(name == "italic") {
+            m_textData.italic = std::string(child->valuestring) == "true";
+        } else if(name == "kerning") {
+            m_textData.kerning = std::string(child->valuestring) == "true";
+        } else if(name == "pixelsize") {
+            m_textData.pixelSize = uint32_t(child->valuedouble);
+        } else if(name == "strikeout") {
+            m_textData.strikethough = std::string(child->valuestring) == "true";
+        } else if(name == "underline") {
+            m_textData.underline = std::string(child->valuestring) == "true";
+        } else if(name == "wrap") {
+            m_textData.wrap = std::string(child->valuestring) == "true";
+        } else if(name == "halign") {
+            std::string alignment = child->valuestring;
+            if (alignment == "left") {
+                m_textData.hAlign = Text::HAlign::Left;
+            } else if (alignment == "center") {
+                m_textData.hAlign = Text::HAlign::Centre;
+            } else if (alignment == "right") {
+                m_textData.hAlign = Text::HAlign::Right;
+            }
+        } else if(name == "valign") {
+            std::string alignment = child->valuestring;
+            if (alignment == "top") {
+                m_textData.vAlign = Text::VAlign::Top;
+            } else if (alignment == "center") {
+                m_textData.vAlign = Text::VAlign::Centre;
+            } else if (alignment == "bottom") {
+                m_textData.vAlign = Text::VAlign::Bottom;
+            }
+        } else if(name == "text") {
+            m_textData.content = child->valuestring;
+        }
+    }
 
-    std::string alignment = node.attribute("halign").as_string("left");
-    if (alignment == "left")
-    {
-        m_textData.hAlign = Text::HAlign::Left;
-    }
-    else if (alignment == "center")
-    {
-        m_textData.hAlign = Text::HAlign::Centre;
-    }
-    else if (alignment == "right")
-    {
-        m_textData.hAlign = Text::HAlign::Right;
-    }
-
-    alignment = node.attribute("valign").as_string("top");
-    if (alignment == "top")
-    {
-        m_textData.vAlign = Text::VAlign::Top;
-    }
-    else if (alignment == "center")
-    {
-        m_textData.vAlign = Text::VAlign::Centre;
-    }
-    else if (alignment == "bottom")
-    {
-        m_textData.vAlign = Text::VAlign::Bottom;
-    }
-
-    m_textData.content = node.text().as_string();
 }
 
 void Object::parseTemplate(const std::string& path, Map* map)
@@ -224,41 +202,55 @@ void Object::parseTemplate(const std::string& path, Map* map)
     {
         auto templatePath = map->getWorkingDirectory() + "/" + path;
 
-        pugi::xml_document doc;
-        if (!doc.load_file(templatePath.c_str()))
+        cJSON *doc = cJSON_Parse(templatePath.c_str());
+        if (!doc)
         {
             Logger::log("Failed opening template file " + path, Logger::Type::Error);
             return;
         }
 
-        auto templateNode = doc.child("template");
+        cJSON *templateNode = nullptr;
+        for(cJSON *child = doc->child; child != nullptr; child = child->next) {
+            if(std::string(child->string) == "template") {
+                templateNode = child;
+                break;
+            }
+        }
         if (!templateNode)
         {
             Logger::log("Template node missing from " + path, Logger::Type::Error);
             return;
         }
 
-        //if the template has a tileset load that (if not already loaded)
+        cJSON *objectNode = nullptr;
         std::string tilesetName;
-        auto tileset = templateNode.child("tileset");
-        if (tileset)
-        {
-            tilesetName = tileset.attribute("source").as_string();
-            if (!tilesetName.empty() &&
-                templateTilesets.count(tilesetName) == 0)
-            {
-                templateTilesets.insert(std::make_pair(tilesetName, Tileset(map->getWorkingDirectory())));
-                templateTilesets.at(tilesetName).parse(tileset, map);
+        for(cJSON *child = templateNode->child; child != nullptr; child = child->next) {
+            std::string name = child->string;
+            if(name == "tileset") {
+                for(cJSON *tilesetChild = child->child; tilesetChild != nullptr; tilesetChild = tilesetChild->next) {
+                    if(std::string(tilesetChild->string) == "source") {
+                        tilesetName = tilesetChild->valuestring;
+                        break;
+                    }
+                }
+                if (!tilesetName.empty() &&
+                    templateTilesets.count(tilesetName) == 0)
+                {
+                    templateTilesets.insert(std::make_pair(tilesetName, Tileset(map->getWorkingDirectory())));
+                    templateTilesets.at(tilesetName).parse(*child, map);
+                }
+            } else if(name == "object") {
+                objectNode = child;
             }
         }
+        //if the template has a tileset load that (if not already loaded)
 
         //parse the object - don't pass the map pointer here so there's
         //no recursion if someone tried to get clever and put a template in a template
-        auto obj = templateNode.child("object");
-        if (obj)
+        if (objectNode)
         {
             templateObjects.insert(std::make_pair(path, Object()));
-            templateObjects[path].parse(obj, nullptr);
+            templateObjects[path].parse(*objectNode, nullptr);
             templateObjects[path].m_tilesetName = tilesetName;
         }
     }

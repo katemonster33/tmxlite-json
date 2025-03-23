@@ -107,7 +107,7 @@ bool Tileset::loadWithoutMapFromString(const std::string& xmlStr)
 
 bool Tileset::parse(const cJSON& node, Map* map)
 {
-    std::string attribString = node.name();
+    std::string attribString = node.string;
 
     //when parsing as part of a map, we may be looking at an inline node that
     //refers to another file

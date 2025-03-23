@@ -48,7 +48,6 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API Tileset final
     {
-        cJSON *m_doc;
     public:
         explicit Tileset(const std::string& workingDir = "");
         ~Tileset();
@@ -300,6 +299,7 @@ namespace tmx
         Vector2u m_imageSize;
         Colour m_transparencyColour;
         bool m_hasTransparency;
+        cJSON *m_doc;
 
         std::vector<Terrain> m_terrainTypes;
         std::vector<std::uint32_t> m_tileIndex;
