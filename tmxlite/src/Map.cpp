@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/Map.hpp>
 #include <tmxlite/FreeFuncs.hpp>
@@ -71,12 +71,11 @@ bool Map::loadFromString(const std::string& data, const std::string& workingDir)
     reset();
 
     //open the doc
-    pugi::xml_document doc;
-    auto result = doc.load_string(data.c_str());
+    std::unique_ptr<cJSON> doc;
+    auto result = cJSON_Parse(data.c_str());
     if (!result)
     {
         Logger::log("Failed opening map", Logger::Type::Error);
-        Logger::log("Reason: " + std::string(result.description()), Logger::Type::Error);
         return false;
     }
 
@@ -91,7 +90,15 @@ bool Map::loadFromString(const std::string& data, const std::string& workingDir)
     }
 
     //find the map node and bail if it doesn't exist
-    auto mapNode = doc.child("map");
+    cJSON* mapNode = nullptr;
+    for(cJSON *child = doc->child; child != nullptr; child = child->next)
+    {
+        if(std::string(child->string) == "map")
+        {
+            mapNode = child;
+            break;
+        }
+    }
     if (!mapNode)
     {
         Logger::log("Failed opening map: no map node found", Logger::Type::Error);
@@ -102,7 +109,7 @@ bool Map::loadFromString(const std::string& data, const std::string& workingDir)
 }
 
 //private
-bool Map::parseMapNode(const pugi::xml_node& mapNode)
+bool Map::parseMapNode(const cJSON& mapNode)
 {
     //parse map attributes
     std::size_t pointPos = 0;

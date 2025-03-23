@@ -34,10 +34,8 @@ source distribution.
 #include <cassert>
 #include <vector>
 
-namespace pugi
-{
-    class xml_node;
-}
+
+struct cJSON;
 
 namespace tmx
 {
@@ -79,7 +77,7 @@ namespace tmx
         \brief Attempts to parse the given node as a property
         \param isObjectTypes Set to true if the parsing is done from an object types files.
         */
-        void parse(const pugi::xml_node&, bool isObjectTypes = false);
+        void parse(const cJSON&, bool isObjectTypes = false);
 
         /*!
         \brief Returns the type of data stored in the property.

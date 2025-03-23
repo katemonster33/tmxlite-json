@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/ImageLayer.hpp>
 #include <tmxlite/FreeFuncs.hpp>
@@ -45,66 +45,45 @@ ImageLayer::ImageLayer(const std::string& workingDir)
 
 }
 
-//public
-void ImageLayer::parse(const pugi::xml_node& node, Map*)
+bool ImageLayer::parseChild(const cJSON &child, tmx::Map *map)
 {
-    std::string attribName = node.name();
+    std::string childName = child.string;
+    if(childName == "repeatx") {
+        m_hasRepeatX = std::string(child.valuestring) == "true";
+    } else if(childName == "repeaty") {
+        m_hasRepeatY = std::string(child.valuestring) == "true";
+    } else if(childName == "transparentcolor") {
+        m_transparencyColour = colourFromString(child.valuestring);
+        m_hasTransparency = true;
+    } else if(childName == "image") {
+        m_filePath = resolveFilePath(child.valuestring, m_workingDir);
+    } else if(childName == "imagewidth") {
+        m_imageSize.x = (unsigned int)child.valuedouble;
+    } else if(childName == "imageheight") {
+        
+        m_imageSize.y = (unsigned int)child.valuedouble;
+    } else {
+        return Layer::parseChild(child, map);
+    }
+    return true;
+}
+
+//public
+bool ImageLayer::parse(const cJSON& node, Map* map)
+{
+    std::string attribName = node.string;
     if (attribName != "imagelayer")
     {
         Logger::log("Node not an image layer, node skipped", Logger::Type::Error);
-        return;
+        return false;
     }
+    bool retval = Parsable::parse(node, map);
 
-    //TODO this gets repeated foreach layer type and could all be moved to base class...
-    setName(node.attribute("name").as_string());
-    setClass(node.attribute("class").as_string());
-    setOpacity(node.attribute("opacity").as_float(1.f));
-    setVisible(node.attribute("visible").as_bool(true));
-    setOffset(node.attribute("offsetx").as_int(0), node.attribute("offsety").as_int(0));
-    setSize(node.attribute("width").as_uint(0), node.attribute("height").as_uint(0));
-    setParallaxFactor(node.attribute("parallaxx").as_float(1.f), node.attribute("parallaxy").as_float(1.f));
-
-    std::string tintColour = node.attribute("tintcolor").as_string();
-    if (!tintColour.empty())
-    {
-        setTintColour(colourFromString(tintColour));
-    }
-
-    m_hasRepeatX = node.attribute("repeatx").as_bool(false);
-    m_hasRepeatY = node.attribute("repeaty").as_bool(false);
-
-    for (const auto& child : node.children())
-    {
-        attribName = child.name();
-        if (attribName == "image")
-        {
-            attribName = child.attribute("source").as_string();
-            if (attribName.empty())
-            {
-                Logger::log("Image Layer has missing source property", Logger::Type::Warning);
-                return;
-            }
-
-            if (child.attribute("width") &&  child.attribute("height"))
-            {
-                m_imageSize.x = child.attribute("width").as_uint();
-                m_imageSize.y = child.attribute("height").as_uint();
-            }
-
-            m_filePath = resolveFilePath(attribName, m_workingDir);
-            if (child.attribute("trans"))
-            {
-                attribName = child.attribute("trans").as_string();
-                m_transparencyColour = colourFromString(attribName);
-                m_hasTransparency = true;
-            }
-        }
-        else if (attribName == "properties")
-        {
-            for (const auto& p : child.children())
-            {
-                addProperty(p);
-            }
+    if(retval){
+        if(m_filePath.empty()) {
+            Logger::log("Image Layer has missing source property", Logger::Type::Warning);
+            return false;
         }
     }
+    return retval;
 }

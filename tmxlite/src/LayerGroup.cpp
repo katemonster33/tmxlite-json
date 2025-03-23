@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJson.h"
 #endif
 #include <tmxlite/LayerGroup.hpp>
 #include <tmxlite/FreeFuncs.hpp>
@@ -45,65 +45,47 @@ LayerGroup::LayerGroup(const std::string& workingDir, const Vector2u& tileCount)
 {
 }
 
-//public
-void LayerGroup::parse(const pugi::xml_node& node, Map* map)
+bool LayerGroup::parseChild(const struct cJSON &child, tmx::Map* map)
 {
-    assert(map);
-    std::string attribString = node.name();
-    if (attribString != "group")
-    {
+    assert(map != nullptr);
+    if(std::string(child.string) == "layer") {
+        m_layerNode = &child;
+    } else {
+        return Layer::parseChild(child, map);
+    }
+    return true;
+}
+
+//public
+bool LayerGroup::parse(const cJSON& node, Map* map)
+{
+    std::string attribString = node.string;
+    if (attribString != "group") {
         Logger::log("Node was not a group layer, node will be skipped.", Logger::Type::Error);
-        return;
+        return false;
     }
 
-    setName(node.attribute("name").as_string());
-    setClass(node.attribute("class").as_string());
-    setOpacity(node.attribute("opacity").as_float(1.f));
-    setVisible(node.attribute("visible").as_bool(true));
-    setOffset(node.attribute("offsetx").as_int(0), node.attribute("offsety").as_int(0));
-    setSize(node.attribute("width").as_uint(0), node.attribute("height").as_uint(0));
-    setParallaxFactor(node.attribute("parallaxx").as_float(1.f), node.attribute("parallaxy").as_float(1.f));
-
-    std::string tintColour = node.attribute("tintcolor").as_string();
-    if (!tintColour.empty())
+    bool retval = Parsable::parse(node, map);
+    if(retval && m_layerNode)
     {
-        setTintColour(colourFromString(tintColour));
-    }
-
-    // parse children
-    for (const auto& child : node.children())
-    {
-        attribString = child.name();
-        if (attribString == "properties")
-        {
-            for (const auto& p : child.children())
-            {
-                addProperty(p);
+        for(cJSON *layerChild = m_layerNode->child; layerChild != nullptr; layerChild = layerChild->next) {
+            std::string layerChildType = layerChild->string;
+            if (attribString == "layer") {
+                m_layers.emplace_back(std::make_unique<TileLayer>(m_tileCount.x * m_tileCount.y));
+                m_layers.back()->parse(*layerChild, map);
+            } else if (attribString == "objectgroup") {
+                m_layers.emplace_back(std::make_unique<ObjectGroup>());
+                m_layers.back()->parse(*layerChild, map);
+            } else if (attribString == "imagelayer") {
+                m_layers.emplace_back(std::make_unique<ImageLayer>(m_workingDir));
+                m_layers.back()->parse(*layerChild, map);
+            } else if (attribString == "group") {
+                m_layers.emplace_back(std::make_unique<LayerGroup>(m_workingDir, m_tileCount));
+                m_layers.back()->parse(*layerChild, map);
+            } else {
+                LOG("Unidentified name " + attribString + ": node skipped", Logger::Type::Warning);
             }
         }
-        else if (attribString == "layer")
-        {
-            m_layers.emplace_back(std::make_unique<TileLayer>(m_tileCount.x * m_tileCount.y));
-            m_layers.back()->parse(child, map);
-        }
-        else if (attribString == "objectgroup")
-        {
-            m_layers.emplace_back(std::make_unique<ObjectGroup>());
-            m_layers.back()->parse(child, map);
-        }
-        else if (attribString == "imagelayer")
-        {
-            m_layers.emplace_back(std::make_unique<ImageLayer>(m_workingDir));
-            m_layers.back()->parse(child, map);
-        }
-        else if (attribString == "group")
-        {
-            m_layers.emplace_back(std::make_unique<LayerGroup>(m_workingDir, m_tileCount));
-            m_layers.back()->parse(child, map);
-        }
-        else
-        {
-            LOG("Unidentified name " + attribString + ": node skipped", Logger::Type::Warning);
-        }
     }
+    return retval;
 }

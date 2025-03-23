@@ -34,10 +34,7 @@ source distribution.
 #include <string>
 #include <vector>
 
-namespace pugi
-{
-    class xml_node;
-}
+struct cJSON;
 
 namespace tmx
 {
@@ -99,7 +96,7 @@ namespace tmx
         \brief Attempts to parse the given xml node and
         read the Object properties if it is valid.
         */
-        void parse(const pugi::xml_node&, Map*);
+        void parse(const cJSON&, Map*);
 
         /*!
         \brief Returns the unique ID of the Object
@@ -214,8 +211,8 @@ namespace tmx
 
         std::string m_tilesetName;
 
-        void parsePoints(const pugi::xml_node&);
-        void parseText(const pugi::xml_node&);
+        void parsePoints(const struct cJSON&);
+        void parseText(const cJSON&);
         void parseTemplate(const std::string&, Map*);
     };
 }

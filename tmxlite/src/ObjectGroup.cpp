@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/FreeFuncs.hpp>
 #include <tmxlite/ObjectGroup.hpp>
@@ -43,58 +43,22 @@ ObjectGroup::ObjectGroup()
 
 }
 
-//public
-void ObjectGroup::parse(const pugi::xml_node& node, Map* map)
+bool ObjectGroup::parseChild(const struct cJSON &child, tmx::Map* map)
 {
-    std::string attribString = node.name();
-    if (attribString != "objectgroup")
-    {
-        Logger::log("Node was not an object group, node will be skipped.", Logger::Type::Error);
-        return;
-    }
-
-    setName(node.attribute("name").as_string());
-    setClass(node.attribute("class").as_string());
-
-    attribString = node.attribute("color").as_string();
-    if (!attribString.empty())
-    {
-        m_colour = colourFromString(attribString);
-    }
-
-    setOpacity(node.attribute("opacity").as_float(1.f));
-    setVisible(node.attribute("visible").as_bool(true));
-    setOffset(node.attribute("offsetx").as_int(0), node.attribute("offsety").as_int(0));
-    setSize(node.attribute("width").as_uint(0), node.attribute("height").as_uint(0));
-    setParallaxFactor(node.attribute("parallaxx").as_float(1.f), node.attribute("parallaxy").as_float(1.f));
-
-    std::string tintColour = node.attribute("tintcolor").as_string();
-    if (!tintColour.empty())
-    {
-        setTintColour(colourFromString(tintColour));
-    }
-
-    attribString = node.attribute("draworder").as_string();
-    if (attribString == "index")
-    {
-        m_drawOrder = DrawOrder::Index;
-    }
-
-    for (const auto& child : node.children())
-    {
-        attribString = child.name();
-        if (attribString == "properties")
-        {
-            for (const auto& p : child)
-            {
-                m_properties.emplace_back();
-                m_properties.back().parse(p);
-            }
-        }
-        else if (attribString == "object")
-        {
+    std::string childName = child.string;
+    if(childName == "objects") {
+        for(cJSON *objectNode = child.child; objectNode != nullptr; objectNode = objectNode->next) {
             m_objects.emplace_back();
-            m_objects.back().parse(child, map);
+            m_objects.back().parse(*objectNode, map);
         }
+    } else if(childName == "draworder") {
+        if(std::string(child.valuestring) == "index") {
+            m_drawOrder = DrawOrder::Index;
+        } else {
+            m_drawOrder = DrawOrder::TopDown;
+        }
+    } else {
+        return Layer::parseChild(child, map);
     }
+    return true;
 }

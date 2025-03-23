@@ -25,9 +25,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/FreeFuncs.hpp>
 #include <tmxlite/ObjectTypes.hpp>
@@ -51,12 +51,10 @@ bool ObjectTypes::loadFromString(const std::string &data, const std::string &wor
     reset();
 
     //open the doc
-    pugi::xml_document doc;
-    auto result = doc.load_string(data.c_str());
-    if (!result)
+    cJSON* doc = cJSON_Parse(data.c_str());
+    if (!doc)
     {
         Logger::log("Failed opening object types", Logger::Type::Error);
-        Logger::log("Reason: " + std::string(result.description()), Logger::Type::Error);
         return false;
     }
 
@@ -72,40 +70,51 @@ bool ObjectTypes::loadFromString(const std::string &data, const std::string &wor
 
 
     //find the node and bail if it doesn't exist
-    auto node = doc.child("objecttypes");
+    cJSON *node = nullptr;
+    for(cJSON *child = doc->child; child != nullptr; child = child->next)
+    {
+        if(std::string(child->string) == "objecttypes") {
+            node = child;
+            break;
+        }
+    }
     if (!node)
     {
         Logger::log("Failed object types: no objecttypes node found", Logger::Type::Error);
         return reset();
     }
 
-    return parseObjectTypesNode(node);
+    return parseObjectTypesNode(*node);
 }
 
-bool ObjectTypes::parseObjectTypesNode(const pugi::xml_node &node)
+bool ObjectTypes::parseObjectTypesNode(const cJSON &node)
 {
     //<objecttypes> <-- node
     //  <objecttype name="Character" color="#1e47ff">
     //    <property>...
 
     //parse types
-    for(const auto& child : node.children())
+    for(cJSON *child = node.child; child != nullptr; child = child->next)
     {
-        std::string attribString = child.name();
+        std::string attribString = child->string;
         if (attribString == "objecttype")
         {
             Type type;
 
             //parse the metadata of the type
-            type.name = child.attribute("name").as_string();
-            type.colour = colourFromString(child.attribute("color").as_string("#FFFFFFFF"));;
-
-            //parse the default properties of the type
-            for (const auto& p : child.children())
-            {
-                Property prop;
-                prop.parse(p, true);
-                type.properties.push_back(prop);
+            type.colour = colourFromString("#FFFFFFFF");
+            for(cJSON *attrib = child->child; attrib != nullptr; attrib = attrib->next) {
+                if(std::string(attrib->string) == "name") {
+                    type.name = std::string(attrib->valuestring);
+                } else if(std::string(attrib->string) == "color") {
+                    type.colour = colourFromString(attrib->valuestring);
+                } else {
+                    for(cJSON *property = attrib->child; property != nullptr; property = property->next) {
+                        Property prop;
+                        prop.parse(*property, true);
+                        type.properties.push_back(prop);
+                    }
+                }
             }
 
             m_types.push_back(type);

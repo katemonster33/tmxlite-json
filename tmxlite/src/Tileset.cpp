@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/Tileset.hpp>
 #include <tmxlite/FreeFuncs.hpp>
@@ -48,9 +48,18 @@ Tileset::Tileset(const std::string& workingDir)
     m_columnCount           (0),
     m_objectAlignment       (ObjectAlignment::Unspecified),
     m_transparencyColour    (0, 0, 0, 0),
-    m_hasTransparency       (false)
+    m_hasTransparency       (false),
+    m_doc(nullptr)
 {
 
+}
+
+Tileset::~Tileset()
+{
+    if(m_doc != nullptr){
+        cJSON_Delete(m_doc);
+        m_doc = nullptr;
+    }
 }
 
 bool Tileset::loadWithoutMap(const std::string& path)
@@ -69,26 +78,34 @@ bool Tileset::loadWithoutMap(const std::string& path)
 
 bool Tileset::loadWithoutMapFromString(const std::string& xmlStr)
 {
-    pugi::xml_document doc;
-    auto result = doc.load_string(xmlStr.c_str());
-    if (!result)
+    if(m_doc != nullptr){
+        cJSON_Delete(m_doc);
+        m_doc = nullptr;
+    }
+    m_doc = cJSON_Parse(xmlStr.c_str());
+    if (!m_doc)
     {
         Logger::log("Failed to parse tileset XML", Logger::Type::Error);
-        Logger::log("Reason: " + std::string(result.description()), Logger::Type::Error);
+        //Logger::log("Reason: " + std::string(result.description()), Logger::Type::Error);
         return false;
     }
-
-    auto tilesetNode = doc.child("tileset");
+    cJSON *tilesetNode = nullptr;
+    for(cJSON *child = m_doc->child; child != nullptr; child = child->next) {
+        if(std::string(child->string) == "tileset") {
+            tilesetNode = child;
+            break;
+        }
+    }
     if (!tilesetNode)
     {
         Logger::log("Failed opening tileset: no tileset node found", Logger::Type::Error);
         return reset();
     }
 
-    return parse(tilesetNode, nullptr);
+    return parse(*tilesetNode, nullptr);
 }
 
-bool Tileset::parse(pugi::xml_node node, Map* map)
+bool Tileset::parse(const cJSON& node, Map* map)
 {
     std::string attribString = node.name();
 
@@ -280,47 +297,55 @@ bool Tileset::reset()
     m_terrainTypes.clear();
     m_tileIndex.clear();
     m_tiles.clear();
+    if(m_doc) {
+        cJSON_Delete(m_doc);
+        m_doc = nullptr;
+    }
     return false;
 }
 
-void Tileset::parseOffsetNode(const pugi::xml_node& node)
+void Tileset::parseOffsetNode(const cJSON& node)
 {
-    m_tileOffset.x = node.attribute("x").as_int();
-    m_tileOffset.y = node.attribute("y").as_int();
-}
-
-void Tileset::parsePropertyNode(const pugi::xml_node& node)
-{
-    const auto& children = node.children();
-    for (const auto& child : children)
-    {
-        m_properties.emplace_back();
-        m_properties.back().parse(child);
+    for(cJSON *offsetNode = node.child; offsetNode != nullptr; offsetNode = offsetNode->next) {
+        std::string nodeName = offsetNode->string;
+        if(nodeName == "x") {
+            m_tileOffset.x = int(offsetNode->valuedouble);
+        } else if(nodeName == "y") {
+            m_tileOffset.y = int(offsetNode->valuedouble);
+        }
     }
 }
 
-void Tileset::parseTerrainNode(const pugi::xml_node& node)
+void Tileset::parsePropertyNode(const cJSON& node)
 {
-    const auto& children = node.children();
-    for (const auto& child : children)
+    for(cJSON* propNode = node.child; propNode != nullptr; propNode = propNode->next)
     {
-        std::string name = child.name();
+        m_properties.emplace_back();
+        m_properties.back().parse(*propNode);
+    }
+}
+
+void Tileset::parseTerrainNode(const cJSON& node)
+{
+    for(cJSON* child = node.child; child != nullptr; child = child->next)
+    {
+        std::string name = child->string;
         if (name == "terrain")
         {
             m_terrainTypes.emplace_back();
             auto& terrain = m_terrainTypes.back();
-            terrain.name = child.attribute("name").as_string();
-            terrain.tileID = child.attribute("tile").as_int();
-            auto properties = child.child("properties");
-            if (properties)
-            {
-                for (const auto& p : properties)
-                {
-                    name = p.name();
-                    if (name == "property")
-                    {
-                        terrain.properties.emplace_back();
-                        terrain.properties.back().parse(p);
+            for(cJSON *terrainNode = child->child; terrainNode != nullptr; terrainNode = terrainNode->next) {
+                std::string tnodename = terrainNode->string;
+                if(tnodename == "name") {
+                    terrain.name = terrainNode->valuestring;
+                } else if(tnodename == "tile") {
+                    terrain.tileID = int(terrainNode->valuedouble);
+                } else if(tnodename == "properties") {
+                    for(cJSON *propNode = terrainNode->child; propNode != nullptr; propNode = propNode->next) {
+                        if (std::string(propNode->string) == "property") {
+                            terrain.properties.emplace_back();
+                            terrain.properties.back().parse(*propNode;
+                        }
                     }
                 }
             }
@@ -341,113 +366,93 @@ Tileset::Tile& Tileset::newTile(std::uint32_t ID)
     return tile;
 }
 
-void Tileset::parseTileNode(const pugi::xml_node& node, Map* map)
+void Tileset::parseTileNode(const cJSON& node, Map* map)
 {
-    Tile& tile = newTile(node.attribute("id").as_int());
-    if (node.attribute("terrain"))
-    {
-        std::string data = node.attribute("terrain").as_string();
-        bool lastWasChar = true;
-        std::size_t idx = 0u;
-        for (auto i = 0u; i < data.size() && idx < tile.terrainIndices.size(); ++i)
-        {
-            if (isdigit(data[i]))
-            {
-                tile.terrainIndices[idx++] = std::atoi(&data[i]);
-                lastWasChar = false;
-            }
-            else
-            {
-                if (!lastWasChar)
-                {
-                    lastWasChar = true;
-                }
-                else
-                {
-                    tile.terrainIndices[idx++] = -1;
-                    lastWasChar = false;
-                }
-            }
-        }
-        if (lastWasChar)
-        {
-            tile.terrainIndices[idx] = -1;
+    uint32_t tileId = 0;
+    for(cJSON *tileNode = node.child; tileNode != nullptr; tileNode = tileNode->next) {
+        if(std::string(tileNode->string) == "id") {
+            tileId = int(tileNode->valuedouble);
         }
     }
+    Tile& tile = newTile(tileId);
 
-    tile.probability = node.attribute("probability").as_int(100);
-
-    tile.className = node.attribute("type").as_string();
-    if (tile.className.empty())
-    {
-        tile.className = node.attribute("class").as_string();
-    }
-    
     //by default we set the tile's values as in an Image tileset
     tile.imagePath = m_imagePath;
     tile.imageSize = m_tileSize;
-
+    tile.probability = 100;
+    for(cJSON *tileNode = node.child; tileNode != nullptr; tileNode = tileNode->next) {
+        std::string name = tileNode->string;
+        if(name == "terrain") {
+            std::string data = tileNode->valuestring;
+            bool lastWasChar = true;
+            std::size_t idx = 0u;
+            for (auto i = 0u; i < data.size() && idx < tile.terrainIndices.size(); ++i)
+            {
+                if (isdigit(data[i]))
+                {
+                    tile.terrainIndices[idx++] = std::atoi(&data[i]);
+                    lastWasChar = false;
+                }
+                else
+                {
+                    if (!lastWasChar)
+                    {
+                        lastWasChar = true;
+                    }
+                    else
+                    {
+                        tile.terrainIndices[idx++] = -1;
+                        lastWasChar = false;
+                    }
+                }
+            }
+            if (lastWasChar)
+            {
+                tile.terrainIndices[idx] = -1;
+            }
+        } else if(name == "probability") {
+            tile.probability = int(tileNode->valuedouble);
+        } else if(name == "type" || name == "class") {
+            tile.className = tileNode->valuestring;
+        } else if(name == "properties") {
+            for(cJSON *propNode = tileNode->child; propNode != nullptr; propNode = propNode->next) {
+                tile.properties.emplace_back();
+                tile.properties.back().parse(*propNode);
+            }
+        } else if (name == "objectgroup") {
+            tile.objectGroup.parse(*tileNode, map);
+        } else if (name == "image") {
+            if (tileNode->valuestring == nullptr) {
+                Logger::log("Tile image path missing", Logger::Type::Warning);
+                continue;
+            }
+            tile.imagePath = resolveFilePath(tileNode->valuestring, m_workingDir);
+        } else if (name == "imagewidth") {
+            tile.imageSize.x = (unsigned int)tileNode->valuedouble;
+        } else if (name == "imageheight") {
+            tile.imageSize.y = (unsigned int)tileNode->valuedouble;
+        } else if (name == "animation") {
+            for(cJSON *animNode = node.child; animNode != nullptr; animNode = animNode->next) {
+                Tile::Animation::Frame frame;
+                for(cJSON* frameNode = animNode->child; frameNode != nullptr; frameNode = frameNode->next) {
+                    std::string fnodename = frameNode->string;
+                    if(fnodename == "duration") {
+                        frame.duration = int(frameNode->valuedouble);
+                    } else if(fnodename == "tileid") {
+                        frame.tileID = int(frameNode->valueint) + m_firstGID;
+                    }
+                }
+                tile.animation.frames.push_back(frame);
+            }
+        }
+    }
+    
     if (m_columnCount != 0) 
     {
         std::uint32_t rowIndex = tile.ID % m_columnCount;
         std::uint32_t columnIndex = tile.ID / m_columnCount;
         tile.imagePosition.x = m_margin + rowIndex * (m_tileSize.x + m_spacing);
         tile.imagePosition.y = m_margin + columnIndex * (m_tileSize.y + m_spacing);
-    }
-
-    const auto& children = node.children();
-    for (const auto& child : children)
-    {
-        std::string name = child.name();
-        if (name == "properties")
-        {
-            for (const auto& prop : child.children())
-            {
-                tile.properties.emplace_back();
-                tile.properties.back().parse(prop);
-            }
-        }
-        else if (name == "objectgroup")
-        {
-            tile.objectGroup.parse(child, map);
-        }
-        else if (name == "image")
-        {
-            std::string attribString = child.attribute("source").as_string();
-            if (attribString.empty())
-            {
-                Logger::log("Tile image path missing", Logger::Type::Warning);
-                continue;
-            }
-            tile.imagePath = resolveFilePath(attribString, m_workingDir);
-
-            tile.imagePosition = tmx::Vector2u(0, 0);
-
-            if (child.attribute("trans"))
-            {
-                attribString = child.attribute("trans").as_string();
-                m_transparencyColour = colourFromString(attribString);
-                m_hasTransparency = true;
-            }
-            if (child.attribute("width"))
-            {
-                tile.imageSize.x = child.attribute("width").as_uint();
-            }
-            if (child.attribute("height"))
-            {
-                tile.imageSize.y = child.attribute("height").as_uint();
-            }
-        }
-        else if (name == "animation")
-        {
-            for (const auto& frameNode : child.children())
-            {
-                Tile::Animation::Frame frame;
-                frame.duration = frameNode.attribute("duration").as_int();
-                frame.tileID = frameNode.attribute("tileid").as_int() + m_firstGID;
-                tile.animation.frames.push_back(frame);
-            }
-        }
     }
 }
 

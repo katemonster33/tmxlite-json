@@ -35,10 +35,7 @@ source distribution.
 #include <vector>
 #include <array>
 
-namespace pugi
-{
-    class xml_node;
-}
+struct cJSON;
 
 namespace tmx
 {
@@ -51,8 +48,10 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API Tileset final
     {
+        cJSON *m_doc;
     public:
         explicit Tileset(const std::string& workingDir = "");
+        ~Tileset();
 
         /*!
         \brief Any tiles within a tile set which have special
@@ -151,7 +150,7 @@ namespace tmx
         If node parsing fails, an error is printed in the console
         and the Tileset remains in an uninitialised state.
         */
-        bool parse(pugi::xml_node, Map*);
+        bool parse(const cJSON&, Map*);
 
         /*!
         \brief Returns the first GID of this tile set.
@@ -310,11 +309,11 @@ namespace tmx
         //on load failure
         bool reset();
 
-        void parseOffsetNode(const pugi::xml_node&);
-        void parsePropertyNode(const pugi::xml_node&);
-        void parseTerrainNode(const pugi::xml_node&);
+        void parseOffsetNode(const cJSON&);
+        void parsePropertyNode(const cJSON&);
+        void parseTerrainNode(const cJSON&);
         Tile& newTile(std::uint32_t ID);
-        void parseTileNode(const pugi::xml_node&, Map*);
+        void parseTileNode(const cJSON&, Map*);
         void createMissingTile(std::uint32_t ID);
     };
 }

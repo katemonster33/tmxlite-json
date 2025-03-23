@@ -41,6 +41,9 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API ObjectGroup final : public Layer
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map* map = nullptr) override;
+        
     public:
         enum class DrawOrder
         {
@@ -51,7 +54,6 @@ namespace tmx
         ObjectGroup();
 
         Type getType() const override { return Layer::Type::Object; }
-        void parse(const pugi::xml_node&, Map*) override;
 
         /*!
         \brief Returns the colour associated with this layer

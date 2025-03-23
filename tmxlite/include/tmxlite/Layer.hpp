@@ -30,15 +30,13 @@ source distribution.
 #include <tmxlite/Config.hpp>
 #include <tmxlite/Property.hpp>
 #include <tmxlite/Types.hpp>
+#include <tmxlite/Parsable.hpp>
 
 #include <string>
 #include <memory>
 #include <vector>
 
-namespace pugi
-{
-    class xml_node;
-}
+struct cJSON;
 
 namespace tmx
 {
@@ -52,8 +50,10 @@ namespace tmx
     This is an abstract base class from which all layer
     types are derived.
     */
-    class TMXLITE_EXPORT_API Layer
+    class TMXLITE_EXPORT_API Layer : public Parsable
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map* map = nullptr) override;
     public:
         using Ptr = std::unique_ptr<Layer>;
 
@@ -99,11 +99,6 @@ namespace tmx
 
         template <typename T>
         const T& getLayerAs() const;
-
-        /*!
-        \brief Attempts to parse the specific node layer type
-        */
-        virtual void parse(const pugi::xml_node&, Map* = nullptr) = 0;
 
         /*!
         \brief Returns the name of the layer
@@ -157,8 +152,7 @@ namespace tmx
         void setOffset(std::int32_t x, std::int32_t y) { m_offset = Vector2i(x, y); }
         void setParallaxFactor(float x, float y) { m_parallaxFactor.x = x; m_parallaxFactor.y = y; }
         void setTintColour(Colour c) { m_tintColour = c; }
-        void setSize(std::uint32_t width, std::uint32_t height) { m_size = Vector2u(width, height); }
-        void addProperty(const pugi::xml_node& node) { m_properties.emplace_back(); m_properties.back().parse(node); }
+        //void addProperty(const pugi::xml_node& node) { m_properties.emplace_back(); m_properties.back().parse(node); }
 
     private:
         std::string m_name;

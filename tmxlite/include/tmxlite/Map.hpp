@@ -38,6 +38,8 @@ source distribution.
 #include <map>
 #include <unordered_map>
 
+struct cJSON;
+
 namespace tmx
 {
     /*!
@@ -273,7 +275,7 @@ namespace tmx
         std::unordered_map<std::string, Object> m_templateObjects;
         std::unordered_map<std::string, Tileset> m_templateTilesets;
 
-        bool parseMapNode(const pugi::xml_node&);
+        bool parseMapNode(const cJSON&);
 
         //always returns false so we can return this
         //on load failure

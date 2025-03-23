@@ -37,7 +37,18 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API TileLayer final : public Layer
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map* map = nullptr) override;
     public:
+
+        enum class CompressionType
+        {
+            None, Zlib, GZip, Zstd
+        };
+        enum class EncodingType
+        {
+            Csv, Base64
+        };
         /*!
         \brief Tile information for a layer
         */
@@ -55,6 +66,7 @@ namespace tmx
             Vector2i position; //<! coordinate in tiles, not pixels
             Vector2i size; //!< size in tiles, not pixels
             std::vector<Tile> tiles;
+            const cJSON *dataNode;
         };
 
         /*!
@@ -70,8 +82,9 @@ namespace tmx
         explicit TileLayer(std::size_t);
 
         Type getType() const override { return Layer::Type::Tile; }
-        void parse(const pugi::xml_node&, Map*) override;
-
+        virtual bool parse(const struct cJSON&, Map*) override;
+        std::vector<uint32_t> parseTileIds(std::string dataString, std::size_t tileCount);
+        bool parseChunks(const struct cJSON& chunksNode);
         /*!
         \brief Returns the list of tiles used to make up the layer
         If this is empty then the map is most likely infinite, in
@@ -88,14 +101,18 @@ namespace tmx
         */
         const std::vector<Chunk>& getChunks() const { return m_chunks; }
 
+        const Vector2u &getSize() const { return m_size; }
+
     private:
+        const struct cJSON* m_dataNode = nullptr;
+        EncodingType m_encoding;
+        Vector2u m_size;
         std::vector<Tile> m_tiles;
         std::vector<Chunk> m_chunks;
         std::size_t m_tileCount;
-
-        void parseBase64(const pugi::xml_node&);
-        void parseCSV(const pugi::xml_node&);
-        void parseUnencoded(const pugi::xml_node&);
+        CompressionType m_compression;
+        void parseBase64(const cJSON&);
+        void parseCSV(const cJSON&);
 
         void createTiles(const std::vector<std::uint32_t>&, std::vector<Tile>& destination);
     };

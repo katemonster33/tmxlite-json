@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/Object.hpp>
 #include <tmxlite/FreeFuncs.hpp>
@@ -52,9 +52,9 @@ Object::Object()
 }
 
 //public
-void Object::parse(const pugi::xml_node& node, Map* map)
+void Object::parse(const cJSON& node, Map* map)
 {
-    std::string attribString = node.name();
+    std::string attribString = node.string;
     if (attribString != "object")
     {
         Logger::log("This not an Object node, parsing skipped.", Logger::Type::Error);

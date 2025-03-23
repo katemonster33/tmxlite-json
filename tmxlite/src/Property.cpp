@@ -26,9 +26,9 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 #include <tmxlite/Property.hpp>
 #include <tmxlite/detail/Log.hpp>
@@ -98,49 +98,60 @@ Property Property::fromObject(int value)
 }
 
 //public
-void Property::parse(const pugi::xml_node& node, bool isObjectTypes)
+void Property::parse(const cJSON& node, bool isObjectTypes)
 {
     // The value attribute name is different in object types
     const char *const valueAttribute = isObjectTypes ? "default" : "value";
 
-    std::string attribData = node.name();
+    std::string attribData = node.string;
     if (attribData != "property")
     {
         Logger::log("Node was not a valid property, node will be skipped", Logger::Type::Error);
         return;
     }
 
-    m_name = node.attribute("name").as_string();
-
-    attribData = node.attribute("type").as_string("string");
+    attribData = "string";
+    cJSON *valueNode = nullptr, *propertyNode = nullptr;
+    for(cJSON *child = node.child; child != nullptr; child = child->next) {
+        std::string childName = std::string(child->string);
+        if(childName == "name") {
+            m_name = child->valuestring;
+        } else if(childName == "type") {
+            attribData = child->valuestring;
+        } else if(childName == valueAttribute) {
+            valueNode = child;
+        } else if(childName == "propertytype") {
+            propertyNode = child;
+        }
+    }
     if (attribData == "bool")
     {
-        attribData = node.attribute(valueAttribute).as_string("false");
+        attribData = valueNode != nullptr ? valueNode->valuestring : "false";;
         m_boolValue = (attribData == "true");
         m_type = Type::Boolean;
         return;
     }
     else if (attribData == "int")
     {
-        m_intValue = node.attribute(valueAttribute).as_int(0);
+        m_intValue = valueNode != nullptr ? int(valueNode->valuedouble) : 0;
         m_type = Type::Int;
         return;
     }
     else if (attribData == "float")
     {
-        m_floatValue = node.attribute(valueAttribute).as_float(0.f);
+        m_floatValue = valueNode != nullptr ? float(valueNode->valuedouble) : 0.f;
         m_type = Type::Float;
         return;
     }
     else if (attribData == "string")
     {
-        m_stringValue = node.attribute(valueAttribute).as_string();
+        m_stringValue = valueNode != nullptr ? valueNode->string : "";
 
         //if value is empty, try getting the child value instead
         //as this is how multiline string properties are stored.
-        if(m_stringValue.empty())
+        if(m_stringValue.empty() && valueNode != nullptr)
         {
-            m_stringValue = node.child_value();
+            m_stringValue = valueNode->child->valuestring;
         }
 
         m_type = Type::String;
@@ -148,34 +159,34 @@ void Property::parse(const pugi::xml_node& node, bool isObjectTypes)
     }
     else if (attribData == "color")
     {
-        m_colourValue = colourFromString(node.attribute(valueAttribute).as_string("#FFFFFFFF"));
+        m_colourValue = colourFromString(valueNode != nullptr ? valueNode->valuestring : "#FFFFFFFF");
         m_type = Type::Colour;
         return;
     }
     else if (attribData == "file")
     {
-        m_stringValue = node.attribute(valueAttribute).as_string();
+        m_stringValue = valueNode != nullptr ? valueNode->valuestring : "";
         m_type = Type::File;
         return;
     }
     else if (attribData == "object")
     {
-        m_intValue = node.attribute(valueAttribute).as_int(0);
+        m_intValue = valueNode != nullptr ? int(valueNode->valuedouble) : 0;
         m_type = Type::Object;
         return;
     }
     else if (attribData == "class")
     {
         m_type = Type::Class;
-        m_propertyType = node.attribute("propertytype").as_string("null");
+        m_propertyType = propertyNode != nullptr ? propertyNode->valuestring : "null";
 
-        const std::string firstChildName = node.first_child().name();
-        if (firstChildName == "properties")
+        const std::string firstChildName = propertyNode->child != nullptr ? propertyNode->child->string : "";
+        if (firstChildName == "properties" && propertyNode->child->child != nullptr)
         {
-            for(const auto& childProp : node.first_child().children())
+            for(cJSON *childProp = propertyNode->child->child; childProp != nullptr; childProp++)
             {
                 m_classValue.emplace_back();
-                m_classValue.back().parse(childProp);
+                m_classValue.back().parse(*childProp);
             }
         }
         return;

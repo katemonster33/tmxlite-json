@@ -40,11 +40,13 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API ImageLayer final : public Layer
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map *map);
     public:
         explicit ImageLayer(const std::string&);
 
         Type getType() const override { return Layer::Type::Image; }
-        void parse(const pugi::xml_node&, Map*) override;
+        virtual bool parse(const struct cJSON&, Map*) override;
 
         /*!
         \brief Returns the path, relative to the working directory,

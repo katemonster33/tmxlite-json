@@ -77,7 +77,7 @@ namespace tmx
         std::string m_workingDirectory;
         std::vector<Type> m_types;
 
-        bool parseObjectTypesNode(const pugi::xml_node&);
+        bool parseObjectTypesNode(const cJSON&);
 
         //always returns false so we can return this
         //on load failure

@@ -26,10 +26,10 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <pugixml.hpp>
+#include <cJSON.h>
 #include <zstd.h>
 #else
-#include "detail/pugixml.hpp"
+#include "detail/cJSON.h"
 #endif
 
 #ifdef USE_ZSTD
@@ -44,192 +44,172 @@ source distribution.
 
 using namespace tmx;
 
-namespace
-{
-    struct CompressionType final
-    {
-        enum
-        {
-            Zlib, GZip, Zstd, None
-        };
-    };
-}
 
 TileLayer::TileLayer(std::size_t tileCount)
-    : m_tileCount (tileCount)
+    : m_tileCount (tileCount),
+    m_compression(CompressionType::None)
 {
     m_tiles.reserve(tileCount);
 }
 
-//public
-void TileLayer::parse(const pugi::xml_node& node, Map*)
+
+bool TileLayer::parseChild(const struct cJSON &child, tmx::Map* map)
 {
-    std::string attribName = node.name();
-    if (attribName != "layer")
-    {
-        Logger::log("node not a layer node, skipped parsing", Logger::Type::Error);
-        return;
-    }
-
-    setName(node.attribute("name").as_string());
-    setClass(node.attribute("class").as_string());
-    setOpacity(node.attribute("opacity").as_float(1.f));
-    setVisible(node.attribute("visible").as_bool(true));
-    setOffset(node.attribute("offsetx").as_int(0), node.attribute("offsety").as_int(0));
-    setSize(node.attribute("width").as_uint(0), node.attribute("height").as_uint(0));
-    setParallaxFactor(node.attribute("parallaxx").as_float(1.f), node.attribute("parallaxy").as_float(1.f));
-
-    std::string tintColour = node.attribute("tintcolor").as_string();
-    if (!tintColour.empty())
-    {
-        setTintColour(colourFromString(tintColour));
-    }
-
-    for (const auto& child : node.children())
-    {
-        attribName = child.name();
-        if (attribName == "data")
-        {
-            attribName = child.attribute("encoding").as_string();
-            if (attribName == "base64")
-            {
-                parseBase64(child);
-            }
-            else if (attribName == "csv")
-            {
-                parseCSV(child);
-            }
-            else
-            {
-                parseUnencoded(child);
-            }
+    std::string childName = child.string;
+    if(childName == "data") {
+        m_dataNode = &child;
+    } else if(childName == "width") {
+        m_size.x = (unsigned int)child.valuedouble;
+    } else if(childName == "height") {
+        m_size.y = (unsigned int)child.valuedouble;
+    } else if(childName == "compression") {
+        std::string strCompressionType = child.valuestring;
+        if(strCompressionType == "zlib") {
+            m_compression = CompressionType::Zlib;
+        } else if(strCompressionType == "gzip") {
+            m_compression = CompressionType::GZip;
+        } else if(strCompressionType == "zstd") {
+            m_compression = CompressionType::Zstd;
         }
-        else if (attribName == "properties")
-        {
-            for (const auto& p : child.children())
-            {
-                addProperty(p);
+    } else if(childName == "encoding") {
+        if(std::string(child.valuestring) == "base64") {
+            m_encoding = EncodingType::Base64;
+        } else {
+            m_encoding = EncodingType::Csv;
+        }
+    } else {
+        return Layer::parseChild(child, map);
+    }
+    return true;
+}
+
+//public
+bool TileLayer::parse(const cJSON& node, Map* map)
+{
+    bool retval = Parsable::parse(node, map);
+    if(retval) {
+        if(m_dataNode != nullptr) {
+            if (m_encoding == EncodingType::Base64) {
+                parseBase64(*m_dataNode);
+            } else if (m_encoding == EncodingType::Csv) {
+                parseCSV(*m_dataNode);
             }
         }
     }
+    return retval;
+}
 
+std::vector<uint32_t> TileLayer::parseTileIds(std::string dataString, std::size_t tileCount)
+{
+    std::stringstream ss;
+    ss << dataString;
+    ss >> dataString;
+    dataString = base64_decode(dataString);
+
+    std::size_t expectedSize = tileCount * 4; //4 bytes per tile
+    std::vector<unsigned char> byteData;
+    byteData.reserve(expectedSize);
+
+    switch (m_compression)
+    {
+    default:
+        byteData.insert(byteData.end(), dataString.begin(), dataString.end());
+        break;
+    case CompressionType::Zstd:
+#if defined USE_ZSTD || defined USE_EXTLIBS
+        {
+            std::size_t dataSize = dataString.length() * sizeof(unsigned char);
+            std::size_t result = ZSTD_decompress(byteData.data(), expectedSize, &dataString[0], dataSize);
+            
+            if (ZSTD_isError(result))
+            {
+                std::string err = ZSTD_getErrorName(result);
+                LOG("Failed to decompress layer data, node skipped.\nError: " + err, Logger::Type::Error);
+            }
+        }
+#else
+        Logger::log("Library must be built with USE_EXTLIBS or USE_ZSTD for Zstd compression", Logger::Type::Error);
+        return {};
+#endif
+    case CompressionType::GZip:
+#ifndef USE_EXTLIBS
+        Logger::log("Library must be built with USE_EXTLIBS for GZip compression", Logger::Type::Error);
+        return {};
+#endif
+        //[[fallthrough]];
+    case CompressionType::Zlib:
+    {
+        //unzip
+        std::size_t dataSize = dataString.length() * sizeof(unsigned char);
+
+        if (!decompress(dataString.c_str(), byteData, dataSize, expectedSize))
+        {
+            LOG("Failed to decompress layer data, node skipped.", Logger::Type::Error);
+            return {};
+        }
+    }
+        break;
+    }
+
+    //data stream is in bytes so we need to OR into 32 bit values
+    std::vector<std::uint32_t> IDs;
+    IDs.reserve(tileCount);
+    for (auto i = 0u; i < expectedSize - 3u; i += 4u)
+    {
+        std::uint32_t id = byteData[i] | byteData[i + 1] << 8 | byteData[i + 2] << 16 | byteData[i + 3] << 24;
+        IDs.push_back(id);
+    }
+
+    return IDs;
+}
+
+bool TileLayer::parseChunks(const cJSON &chunkNode)
+{
+    //check for chunk nodes
+    auto dataCount = 0;
+    for(cJSON *child = chunkNode.child; child != nullptr; child = child->next)
+    {
+        std::string childName = child->string;
+        if (childName == "chunk")
+        {
+            Chunk chunk;
+            for(cJSON *chunkNode = child->child; chunkNode != nullptr; chunkNode = chunkNode->next) {
+                std::string chunkNodeName = chunkNode->string;
+                if(chunkNodeName == "x") {
+                    chunk.position.x = int(chunkNode->valuedouble);
+                } else if(chunkNodeName == "y") {
+                    chunk.position.y = int(chunkNode->valuedouble);
+                } else if(chunkNodeName == "width") {
+                    chunk.size.x = int(chunkNode->valuedouble);
+                } else if(chunkNodeName == "height") {
+                    chunk.size.y = int(chunkNode->valuedouble);
+                } else if(chunkNodeName == "data") {
+                    chunk.dataNode = chunkNode;
+                }
+            }
+            if(chunk.dataNode != nullptr) {
+                auto IDs = parseTileIds(chunk.dataNode->valuestring, (chunk.size.x * chunk.size.y));
+
+                if (!IDs.empty())
+                {
+                    createTiles(IDs, chunk.tiles);
+                    m_chunks.push_back(chunk);
+                    dataCount++;
+                }
+            }
+        }
+    }
+    return dataCount != 0;
 }
 
 //private
-void TileLayer::parseBase64(const pugi::xml_node& node)
+void TileLayer::parseBase64(const cJSON& node)
 {
-    auto processDataString = [](std::string dataString, std::size_t tileCount, std::int32_t compressionType)->std::vector<std::uint32_t>
-    {
-        std::stringstream ss;
-        ss << dataString;
-        ss >> dataString;
-        dataString = base64_decode(dataString);
 
-        std::size_t expectedSize = tileCount * 4; //4 bytes per tile
-        std::vector<unsigned char> byteData;
-        byteData.reserve(expectedSize);
-
-        switch (compressionType)
-        {
-        default:
-            byteData.insert(byteData.end(), dataString.begin(), dataString.end());
-            break;
-        case CompressionType::Zstd:
-#if defined USE_ZSTD || defined USE_EXTLIBS
-            {
-                std::size_t dataSize = dataString.length() * sizeof(unsigned char);
-                std::size_t result = ZSTD_decompress(byteData.data(), expectedSize, &dataString[0], dataSize);
-                
-                if (ZSTD_isError(result))
-                {
-                    std::string err = ZSTD_getErrorName(result);
-                    LOG("Failed to decompress layer data, node skipped.\nError: " + err, Logger::Type::Error);
-                }
-            }
-#else
-            Logger::log("Library must be built with USE_EXTLIBS or USE_ZSTD for Zstd compression", Logger::Type::Error);
-            return {};
-#endif
-        case CompressionType::GZip:
-#ifndef USE_EXTLIBS
-            Logger::log("Library must be built with USE_EXTLIBS for GZip compression", Logger::Type::Error);
-            return {};
-#endif
-            //[[fallthrough]];
-        case CompressionType::Zlib:
-        {
-            //unzip
-            std::size_t dataSize = dataString.length() * sizeof(unsigned char);
-
-            if (!decompress(dataString.c_str(), byteData, dataSize, expectedSize))
-            {
-                LOG("Failed to decompress layer data, node skipped.", Logger::Type::Error);
-                return {};
-            }
-        }
-            break;
-        }
-
-        //data stream is in bytes so we need to OR into 32 bit values
-        std::vector<std::uint32_t> IDs;
-        IDs.reserve(tileCount);
-        for (auto i = 0u; i < expectedSize - 3u; i += 4u)
-        {
-            std::uint32_t id = byteData[i] | byteData[i + 1] << 8 | byteData[i + 2] << 16 | byteData[i + 3] << 24;
-            IDs.push_back(id);
-        }
-
-        return IDs;
-    };
-
-    std::int32_t compressionType = CompressionType::None;
-    std::string compression = node.attribute("compression").as_string();
-    if (compression == "gzip")
-    {
-        compressionType = CompressionType::GZip;
-    }
-    else if (compression == "zlib")
-    {
-        compressionType = CompressionType::Zlib;
-    }
-    else if (compression == "zstd")
-    {
-        compressionType = CompressionType::Zstd;
-    }
-
-    std::string data = node.text().as_string();
+    std::string data = node.valuestring;
     if (data.empty())
     {
-        //check for chunk nodes
-        auto dataCount = 0;
-        for (const auto& childNode : node.children())
-        {
-            std::string childName = childNode.name();
-            if (childName == "chunk")
-            {
-                std::string dataString = childNode.text().as_string();
-                if (!dataString.empty())
-                {
-                    Chunk chunk;
-                    chunk.position.x = childNode.attribute("x").as_int();
-                    chunk.position.y = childNode.attribute("y").as_int();
-
-                    chunk.size.x = childNode.attribute("width").as_int();
-                    chunk.size.y = childNode.attribute("height").as_int();
-
-                    auto IDs = processDataString(dataString, (chunk.size.x * chunk.size.y), compressionType);
-
-                    if (!IDs.empty())
-                    {
-                        createTiles(IDs, chunk.tiles);
-                        m_chunks.push_back(chunk);
-                        dataCount++;
-                    }                    
-                }
-            }
-        }
-
-        if (dataCount == 0)
+        if (!parseChunks(node))
         {
             Logger::log("Layer " + getName() + " has no layer data. Layer skipped.", Logger::Type::Error);
             return;
@@ -237,92 +217,24 @@ void TileLayer::parseBase64(const pugi::xml_node& node)
     }
     else
     {
-        auto IDs = processDataString(data, m_tileCount, compressionType);
+        auto IDs = parseTileIds(data, m_tileCount);
         createTiles(IDs, m_tiles);
     }
 }
 
-void TileLayer::parseCSV(const pugi::xml_node& node)
+void TileLayer::parseCSV(const cJSON& node)
 {
-    auto processDataString = [](const std::string dataString, std::size_t tileCount)->std::vector<std::uint32_t>
-    {
-        std::vector<std::uint32_t> IDs;
-        IDs.reserve(tileCount);
-
-        const char* ptr = dataString.c_str();
-        while (true)
-        {
-            char* end;
-            auto res = std::strtoul(ptr, &end, 10);
-            if (end == ptr) break;
-            ptr = end;
-            IDs.push_back(res);
-            if (*ptr == ',') ++ptr;
-        }
-
-        return IDs;
-    };
-
-    std::string data = node.text().as_string();
-    if (data.empty())
-    {
-        //check for chunk nodes
-        auto dataCount = 0;
-        for (const auto& childNode : node.children())
-        {
-            std::string childName = childNode.name();
-            if (childName == "chunk")
-            {
-                std::string dataString = childNode.text().as_string();
-                if (!dataString.empty())
-                {
-                    Chunk chunk;
-                    chunk.position.x = childNode.attribute("x").as_int();
-                    chunk.position.y = childNode.attribute("y").as_int();
-
-                    chunk.size.x = childNode.attribute("width").as_int();
-                    chunk.size.y = childNode.attribute("height").as_int();
-
-                    auto IDs = processDataString(dataString, chunk.size.x * chunk.size.y);
-
-                    if (!IDs.empty())
-                    {
-                        createTiles(IDs, chunk.tiles);
-                        m_chunks.push_back(chunk);
-                        dataCount++;
-                    }
-                }
-            }
-        }
-
-        if (dataCount == 0)
-        {
-            Logger::log("Layer " + getName() + " has no layer data. Layer skipped.", Logger::Type::Error);
-            return;
-        }
-    }
-    else
-    {
-        createTiles(processDataString(data, m_tileCount), m_tiles);
-    }
-}
-
-void TileLayer::parseUnencoded(const pugi::xml_node& node)
-{
-    std::string attribName;
-    std::vector<std::uint32_t> IDs;
-    IDs.reserve(m_tileCount);
-
-    for (const auto& child : node.children())
-    {
-        attribName = child.name();
-        if (attribName == "tile")
-        {
-            IDs.push_back(child.attribute("gid").as_uint());
-        }
+    std::vector<uint32_t> tileIds;
+    for(cJSON* idElem = node.child; idElem != nullptr; idElem = idElem->next) {
+        tileIds.push_back(uint32_t(idElem->valuedouble));
     }
 
-    createTiles(IDs, m_tiles);
+    if (tileIds.empty()) {
+        Logger::log("Layer " + getName() + " has no layer data. Layer skipped.", Logger::Type::Error);
+        return;
+    } else {
+        createTiles(tileIds, m_tiles);
+    }
 }
 
 void TileLayer::createTiles(const std::vector<std::uint32_t>& IDs, std::vector<Tile>& destination)

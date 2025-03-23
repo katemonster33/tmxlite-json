@@ -41,6 +41,8 @@ namespace tmx
     */
     class TMXLITE_EXPORT_API LayerGroup final : public Layer
     {
+    protected:
+        virtual bool parseChild(const struct cJSON &child, tmx::Map* map) override;
     public:
 
         LayerGroup(const std::string& workDir, const Vector2u& tileCount);
@@ -52,7 +54,6 @@ namespace tmx
 
 
         Type getType() const override { return Layer::Type::Group; }
-        void parse(const pugi::xml_node&, Map*) override;
 
         /*!
         \brief Returns a reference to the vector containing the layer data.
@@ -61,9 +62,9 @@ namespace tmx
         \see Layer
         */
         const std::vector<Layer::Ptr>& getLayers() const { return m_layers; }
-
+        virtual bool parse(const cJSON &node, tmx::Map *map) override;
     private:
-
+        const cJSON* m_layerNode = nullptr;
         std::vector<Layer::Ptr> m_layers;
 
         std::string m_workingDir;
