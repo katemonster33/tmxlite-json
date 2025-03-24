@@ -26,7 +26,7 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <cJSON.h>
+#include <cJSON/cJSON.h>
 #include <zstd.h>
 #else
 #include "detail/cJSON.h"

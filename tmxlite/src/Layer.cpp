@@ -6,7 +6,7 @@
 #include <tmxlite/Map.hpp>
 #include <tmxlite/FreeFuncs.hpp>
 #include <tmxlite/detail/Log.hpp>
-#include <cJSON.h>
+#include <cJSON/cJSON.h>
 
 bool tmx::Layer::parseChild(const cJSON& child, Map* map)
 {

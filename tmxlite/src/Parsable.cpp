@@ -1,4 +1,4 @@
-#include <cJSON.h>
+#include <cJSON/cJSON.h>
 
 #include <tmxlite/Parsable.hpp>
 #include <tmxlite/Map.hpp>

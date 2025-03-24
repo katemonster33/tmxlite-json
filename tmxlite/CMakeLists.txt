@@ -70,10 +70,10 @@ if(USE_EXTLIBS)
     SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules/")
     
     find_package(ZLIB REQUIRED)
-    find_package(PUGIXML REQUIRED)
+    find_package(cJSON REQUIRED)
     find_package(Zstd REQUIRED)
     
-    include_directories(${ZLIB_INCLUDE_DIRS} ${PUGIXML_INCLUDE_DIR} ${ZSTD_INCLUDE_DIR})
+    include_directories(${ZLIB_INCLUDE_DIRS} ${CJSON_INCLUDE_DIR} ${ZSTD_INCLUDE_DIR})
     
 else()
     #add miniz and pugixml from source
@@ -104,7 +104,7 @@ else()
 endif()
 
 if(USE_EXTLIBS)
-    target_link_libraries(${PROJECT_NAME} ${ZLIB_LIBRARIES} ${PUGIXML_LIBRARY} ${ZSTD_LIBRARY})
+    target_link_libraries(${PROJECT_NAME} ${ZLIB_LIBRARIES} ${CJSON_LIBRARY} ${ZSTD_LIBRARY})
 else()
     if(USE_ZSTD)
     target_link_libraries(${PROJECT_NAME} ${ZSTD_LIBRARY})    

@@ -26,7 +26,7 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <cJSON.h>
+#include <cJSON/cJSON.h>
 #else
 #include "detail/cJSON.h"
 #endif
@@ -181,7 +181,7 @@ bool Tileset::parse(const cJSON& node, Map* map)
             m_properties = Property::readProperties(*child);
         } else if (name == "terraintypes") {
             parseTerrainNode(*child);
-        } else if (name == "tile") {
+        } else if (name == "tiles") {
             parseTileNode(*child, map);
         } else if(name == "transparentcolor") {
             transparentColor = child->valuestring;
@@ -189,6 +189,8 @@ bool Tileset::parse(const cJSON& node, Map* map)
             m_imageSize.x = int(child->valuedouble);
         } else if(name == "imageheight") {
             m_imageSize.y = int(child->valuedouble);
+        } else {
+            LOG(std::string("Unsupported tileset attribute encountered: ") + child->string, tmx::Logger::Type::Warning);
         }
     }
     

@@ -26,7 +26,7 @@ source distribution.
 *********************************************************************/
 
 #ifdef USE_EXTLIBS
-#include <cJSON.h>
+#include <cJSON/cJSON.h>
 #else
 #include "detail/cJSON.h"
 #endif
@@ -175,8 +175,10 @@ bool Map::parseMapNode(const cJSON& mapNode)
             m_properties = Property::readProperties(*child);
         } else if(childname == "layers") {
             m_layers = Layer::readLayers(*child, this);
-        } else if(childname == "tilesets") {
+        } else if (childname == "tilesets") {
             m_tilesets = Tileset::readTilesets(*child, this);
+        } else if(childname == "nextlayerid" || childname == "nextobjectid") {
+            // i dont think we care about these, but we don't need to see the warning
         } else {
             LOG("Unidentified name " + childname + ": node skipped", Logger::Type::Warning);
         }
