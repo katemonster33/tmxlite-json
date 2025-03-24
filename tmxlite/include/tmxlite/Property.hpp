@@ -49,7 +49,7 @@ namespace tmx
     class TMXLITE_EXPORT_API Property final
     {
     public:
-            
+        static std::vector<Property> readProperties(const cJSON &node);
         enum class Type
         {
             Boolean,

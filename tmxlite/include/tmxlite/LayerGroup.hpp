@@ -45,7 +45,7 @@ namespace tmx
         virtual bool parseChild(const struct cJSON &child, tmx::Map* map) override;
     public:
 
-        LayerGroup(const std::string& workDir, const Vector2u& tileCount);
+        LayerGroup();
         ~LayerGroup() = default;
         LayerGroup(const LayerGroup&) = delete;
         const LayerGroup& operator = (const LayerGroup&) = delete;
@@ -66,9 +66,6 @@ namespace tmx
     private:
         const cJSON* m_layerNode = nullptr;
         std::vector<Layer::Ptr> m_layers;
-
-        std::string m_workingDir;
-        Vector2u m_tileCount;
     };
 
     template <>

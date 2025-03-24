@@ -278,6 +278,9 @@ namespace tmx
          */
         const Tile* getTile(std::uint32_t id) const;
 
+        static Tileset readTileset(const cJSON& node, tmx::Map* map, bool &parseSuccess);
+        static std::vector<Tileset> readTilesets(const cJSON& node, tmx::Map* map);
+
     private:
 
         std::string m_workingDir;
@@ -310,7 +313,6 @@ namespace tmx
         bool reset();
 
         void parseOffsetNode(const cJSON&);
-        void parsePropertyNode(const cJSON&);
         void parseTerrainNode(const cJSON&);
         Tile& newTile(std::uint32_t ID);
         void parseTileNode(const cJSON&, Map*);

@@ -39,17 +39,15 @@ source distribution.
 
 using namespace tmx;
 
-LayerGroup::LayerGroup(const std::string& workingDir, const Vector2u& tileCount)
-    : m_workingDir(workingDir),
-    m_tileCount(tileCount)
+LayerGroup::LayerGroup()
 {
 }
 
 bool LayerGroup::parseChild(const struct cJSON &child, tmx::Map* map)
 {
     assert(map != nullptr);
-    if(std::string(child.string) == "layer") {
-        m_layerNode = &child;
+    if(std::string(child.string) == "layers") {
+        m_layers = Layer::readLayers(child, map);
     } else {
         return Layer::parseChild(child, map);
     }
@@ -65,27 +63,5 @@ bool LayerGroup::parse(const cJSON& node, Map* map)
         return false;
     }
 
-    bool retval = Parsable::parse(node, map);
-    if(retval && m_layerNode)
-    {
-        for(cJSON *layerChild = m_layerNode->child; layerChild != nullptr; layerChild = layerChild->next) {
-            std::string layerChildType = layerChild->string;
-            if (attribString == "layer") {
-                m_layers.emplace_back(std::make_unique<TileLayer>(m_tileCount.x * m_tileCount.y));
-                m_layers.back()->parse(*layerChild, map);
-            } else if (attribString == "objectgroup") {
-                m_layers.emplace_back(std::make_unique<ObjectGroup>());
-                m_layers.back()->parse(*layerChild, map);
-            } else if (attribString == "imagelayer") {
-                m_layers.emplace_back(std::make_unique<ImageLayer>(m_workingDir));
-                m_layers.back()->parse(*layerChild, map);
-            } else if (attribString == "group") {
-                m_layers.emplace_back(std::make_unique<LayerGroup>(m_workingDir, m_tileCount));
-                m_layers.back()->parse(*layerChild, map);
-            } else {
-                LOG("Unidentified name " + attribString + ": node skipped", Logger::Type::Warning);
-            }
-        }
-    }
-    return retval;
+    return Parsable::parse(node, map);
 }

@@ -96,7 +96,10 @@ bool Object::parseChild(const struct cJSON &child, tmx::Map* map)
         parseText(child);
     } else if(attribString == "template") {
         m_template = child.valuestring;
+    } else {
+        return false;
     }
+    return true;
 }
 
 //public

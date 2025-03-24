@@ -83,7 +83,7 @@ namespace tmx
 
         Type getType() const override { return Layer::Type::Tile; }
         virtual bool parse(const struct cJSON&, Map*) override;
-        std::vector<uint32_t> parseTileIds(std::string dataString, std::size_t tileCount);
+        std::vector<uint32_t> parseTileIds(const struct cJSON& node, std::size_t tileCount);
         bool parseChunks(const struct cJSON& chunksNode);
         /*!
         \brief Returns the list of tiles used to make up the layer
@@ -105,6 +105,7 @@ namespace tmx
 
     private:
         const struct cJSON* m_dataNode = nullptr;
+        const struct cJSON* m_chunkNode = nullptr;
         EncodingType m_encoding;
         Vector2u m_size;
         std::vector<Tile> m_tiles;

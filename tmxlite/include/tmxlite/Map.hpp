@@ -248,6 +248,7 @@ namespace tmx
         Vector2f getParallaxOrigin() const { return m_parallaxOrigin; }
 
     private:
+        int m_compressionLevel;
         Version m_version;
         std::string m_class;
         Orientation m_orientation;

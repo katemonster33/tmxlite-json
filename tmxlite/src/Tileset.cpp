@@ -31,6 +31,7 @@ source distribution.
 #include "detail/cJSON.h"
 #endif
 #include <tmxlite/Tileset.hpp>
+#include <tmxlite/Map.hpp>
 #include <tmxlite/FreeFuncs.hpp>
 #include <tmxlite/detail/Log.hpp>
 
@@ -107,149 +108,115 @@ bool Tileset::loadWithoutMapFromString(const std::string& xmlStr)
 
 bool Tileset::parse(const cJSON& node, Map* map)
 {
-    std::string attribString = node.string;
-
     //when parsing as part of a map, we may be looking at an inline node that
     //refers to another file
-    if (map)
-    {
-        if (attribString != "tileset")
-        {
-            Logger::log(attribString + ": not a tileset node! Node will be skipped.", Logger::Type::Warning);
-            return false;
+    if (map) {
+        std::string sourcePath;
+        for(cJSON *child = node.child; child != nullptr; child = child->next) {
+            std::string childname = child->string;
+            if(childname == "firstgid") {
+                m_firstGID = int(child->valuedouble);
+            } else if(childname == "source") {
+                sourcePath = child->valuestring;
+            }
         }
 
-        m_firstGID = node.attribute("firstgid").as_int();
-        if (m_firstGID == 0)
-        {
+        if (m_firstGID == 0) {
             Logger::log("Invalid first GID in tileset. Tileset node skipped.", Logger::Type::Warning);
             return false;
         }
 
-        if (node.attribute("source"))
-        {
-            std::string path = node.attribute("source").as_string();
-            return loadWithoutMap(path);
+        if (!sourcePath.empty()) {
+            return loadWithoutMap(sourcePath);
         }
     }
-
-    m_name = node.attribute("name").as_string();
-    LOG("found tile set " + m_name, Logger::Type::Info);
-    m_class = node.attribute("class").as_string();
-
-    m_tileSize.x = node.attribute("tilewidth").as_int();
-    m_tileSize.y = node.attribute("tileheight").as_int();
-    if (m_tileSize.x == 0 || m_tileSize.y == 0)
-    {
+    std::string transparentColor;
+    for(cJSON *child = node.child; child != nullptr; child = child->next) {
+        std::string name = child->string;
+        if(name == "name") {
+            m_name = child->valuestring;
+            LOG("found tile set " + m_name, Logger::Type::Info);
+        } else if(name == "class") {
+            m_class = child->valuestring;
+        } else if(name == "tilewidth") {
+            m_tileSize.x = int(child->valuedouble);
+        } else if(name == "tileheight") {
+            m_tileSize.y = int(child->valuedouble);
+        } else if(name == "spacing") {
+            m_spacing = int(child->valuedouble);
+        } else if(name == "margin") {
+            m_margin = int(child->valuedouble);
+        } else if(name == "tilecount") {
+            m_tileCount = int(child->valuedouble);
+        } else if(name == "columns") {
+            m_columnCount = int(child->valuedouble);
+        } else if(name == "objectalignment") {
+            std::string objectAlignment = child->valuestring;
+            if (objectAlignment == "unspecified") {
+                m_objectAlignment = ObjectAlignment::Unspecified;
+            } else if (objectAlignment == "topleft") {
+                m_objectAlignment = ObjectAlignment::TopLeft;
+            } else if (objectAlignment == "top") {
+                m_objectAlignment = ObjectAlignment::Top;
+            } else if (objectAlignment == "topright") {
+                m_objectAlignment = ObjectAlignment::TopRight;
+            } else if (objectAlignment == "left") {
+                m_objectAlignment = ObjectAlignment::Left;
+            } else if (objectAlignment == "center") {
+                m_objectAlignment = ObjectAlignment::Center;
+            } else if (objectAlignment == "right") {
+                m_objectAlignment = ObjectAlignment::Right;
+            } else if (objectAlignment == "bottomleft") {
+                m_objectAlignment = ObjectAlignment::BottomLeft;
+            } else if (objectAlignment == "bottom") {
+                m_objectAlignment = ObjectAlignment::Bottom;
+            } else if (objectAlignment == "bottomright") {
+                m_objectAlignment = ObjectAlignment::BottomRight;
+            }
+        } else if(name == "image") {
+            m_imagePath = child->valuestring;
+        } else if (name == "tileoffset") {
+            parseOffsetNode(*child);
+        } else if (name == "properties") {
+            m_properties = Property::readProperties(*child);
+        } else if (name == "terraintypes") {
+            parseTerrainNode(*child);
+        } else if (name == "tile") {
+            parseTileNode(*child, map);
+        } else if(name == "transparentcolor") {
+            transparentColor = child->valuestring;
+        } else if(name == "imagewidth") {
+            m_imageSize.x = int(child->valuedouble);
+        } else if(name == "imageheight") {
+            m_imageSize.y = int(child->valuedouble);
+        }
+    }
+    
+    if (m_tileSize.x == 0 || m_tileSize.y == 0) {
         Logger::log("Invalid tile size found in tile set node. Node will be skipped.", Logger::Type::Error);
         return reset();
     }
-
-    m_spacing = node.attribute("spacing").as_int();
-    m_margin = node.attribute("margin").as_int();
-    m_tileCount = node.attribute("tilecount").as_int();
-    m_columnCount = node.attribute("columns").as_int();
-
     m_tileIndex.reserve(m_tileCount);
     m_tiles.reserve(m_tileCount);
-
-    std::string objectAlignment = node.attribute("objectalignment").as_string();
-    if (!objectAlignment.empty())
-    {
-        if (objectAlignment == "unspecified")
-        {
-            m_objectAlignment = ObjectAlignment::Unspecified;
-        }
-        else if (objectAlignment == "topleft")
-        {
-            m_objectAlignment = ObjectAlignment::TopLeft;
-        }
-        else if (objectAlignment == "top")
-        {
-            m_objectAlignment = ObjectAlignment::Top;
-        }
-        else if (objectAlignment == "topright")
-        {
-            m_objectAlignment = ObjectAlignment::TopRight;
-        }
-        else if (objectAlignment == "left")
-        {
-            m_objectAlignment = ObjectAlignment::Left;
-        }
-        else if (objectAlignment == "center")
-        {
-            m_objectAlignment = ObjectAlignment::Center;
-        }
-        else if (objectAlignment == "right")
-        {
-            m_objectAlignment = ObjectAlignment::Right;
-        }
-        else if (objectAlignment == "bottomleft")
-        {
-            m_objectAlignment = ObjectAlignment::BottomLeft;
-        }
-        else if (objectAlignment == "bottom")
-        {
-            m_objectAlignment = ObjectAlignment::Bottom;
-        }
-        else if (objectAlignment == "bottomright")
-        {
-            m_objectAlignment = ObjectAlignment::BottomRight;
-        }
-    }
-
-    const auto& children = node.children();
-    for (const auto& node : children)
-    {
-        std::string name = node.name();
-        if (name == "image")
-        {
-            //TODO this currently doesn't cover embedded images
-            //mostly because I can't figure out how to export them
-            //from the Tiled editor... but also resource handling
-            //should be handled by the renderer, not the parser.
-            attribString = node.attribute("source").as_string();
-            if (attribString.empty())
-            {
-                Logger::log("Tileset image node has missing source property, tile set not loaded", Logger::Type::Error);
-                return reset();
-            }
-            m_imagePath = resolveFilePath(attribString, m_workingDir);
-            if (node.attribute("trans"))
-            {
-                attribString = node.attribute("trans").as_string();
-                m_transparencyColour = colourFromString(attribString);
-                m_hasTransparency = true;
-            }
-            if (node.attribute("width") && node.attribute("height"))
-            {
-                m_imageSize.x = node.attribute("width").as_int();
-                m_imageSize.y = node.attribute("height").as_int();
-            }
-        }
-        else if (name == "tileoffset")
-        {
-            parseOffsetNode(node);
-        }
-        else if (name == "properties")
-        {
-            parsePropertyNode(node);
-        }
-        else if (name == "terraintypes")
-        {
-            parseTerrainNode(node);
-        }
-        else if (name == "tile")
-        {
-            parseTileNode(node, map);
+    
+    if (m_imagePath.empty()) {
+        Logger::log("Tileset image node has missing source property, tile set not loaded", Logger::Type::Error);
+        return reset();
+    } else {
+        //TODO this currently doesn't cover embedded images
+        //mostly because I can't figure out how to export them
+        //from the Tiled editor... but also resource handling
+        //should be handled by the renderer, not the parser.
+        m_imagePath = resolveFilePath(m_imagePath, m_workingDir);
+        if (!transparentColor.empty()) {
+            m_transparencyColour = colourFromString(transparentColor);
+            m_hasTransparency = true;
         }
     }
 
     //if the tsx file does not declare every tile, we create the missing ones
-    if (m_tiles.size() != getTileCount())
-    {
-        for (std::uint32_t ID = 0; ID < getTileCount(); ID++)
-        {
+    if (m_tiles.size() != getTileCount()) {
+        for (std::uint32_t ID = 0; ID < getTileCount(); ID++) {
             createMissingTile(ID);
         }
     }
@@ -316,15 +283,6 @@ void Tileset::parseOffsetNode(const cJSON& node)
     }
 }
 
-void Tileset::parsePropertyNode(const cJSON& node)
-{
-    for(cJSON* propNode = node.child; propNode != nullptr; propNode = propNode->next)
-    {
-        m_properties.emplace_back();
-        m_properties.back().parse(*propNode);
-    }
-}
-
 void Tileset::parseTerrainNode(const cJSON& node)
 {
     for(cJSON* child = node.child; child != nullptr; child = child->next)
@@ -341,12 +299,7 @@ void Tileset::parseTerrainNode(const cJSON& node)
                 } else if(tnodename == "tile") {
                     terrain.tileID = int(terrainNode->valuedouble);
                 } else if(tnodename == "properties") {
-                    for(cJSON *propNode = terrainNode->child; propNode != nullptr; propNode = propNode->next) {
-                        if (std::string(propNode->string) == "property") {
-                            terrain.properties.emplace_back();
-                            terrain.properties.back().parse(*propNode;
-                        }
-                    }
+                    terrain.properties = Property::readProperties(*terrainNode);
                 }
             }
         }
@@ -364,6 +317,26 @@ Tileset::Tile& Tileset::newTile(std::uint32_t ID)
     m_tileIndex[ID] = static_cast<std::uint32_t>(m_tiles.size());
     tile.ID = ID;
     return tile;
+}
+
+Tileset Tileset::readTileset(const cJSON& node, tmx::Map* map, bool &parseSuccess)
+{
+    Tileset output(map->getWorkingDirectory());
+    parseSuccess = output.parse(node, map);
+    return output;
+}
+
+std::vector<Tileset> Tileset::readTilesets(const cJSON& node, tmx::Map* map)
+{
+    std::vector<Tileset> output;
+    for(cJSON *child = node.child; child != nullptr; child = child->next) {
+        bool parseSuccess = false;
+        auto tileset = readTileset(*child, map, parseSuccess);
+        if(parseSuccess) {
+            output.push_back(std::move(tileset));
+        }
+    }
+    return output;
 }
 
 void Tileset::parseTileNode(const cJSON& node, Map* map)
@@ -386,28 +359,20 @@ void Tileset::parseTileNode(const cJSON& node, Map* map)
             std::string data = tileNode->valuestring;
             bool lastWasChar = true;
             std::size_t idx = 0u;
-            for (auto i = 0u; i < data.size() && idx < tile.terrainIndices.size(); ++i)
-            {
-                if (isdigit(data[i]))
-                {
+            for (auto i = 0u; i < data.size() && idx < tile.terrainIndices.size(); ++i) {
+                if (isdigit(data[i])) {
                     tile.terrainIndices[idx++] = std::atoi(&data[i]);
                     lastWasChar = false;
-                }
-                else
-                {
-                    if (!lastWasChar)
-                    {
+                } else {
+                    if (!lastWasChar) {
                         lastWasChar = true;
-                    }
-                    else
-                    {
+                    } else {
                         tile.terrainIndices[idx++] = -1;
                         lastWasChar = false;
                     }
                 }
             }
-            if (lastWasChar)
-            {
+            if (lastWasChar) {
                 tile.terrainIndices[idx] = -1;
             }
         } else if(name == "probability") {
@@ -415,10 +380,7 @@ void Tileset::parseTileNode(const cJSON& node, Map* map)
         } else if(name == "type" || name == "class") {
             tile.className = tileNode->valuestring;
         } else if(name == "properties") {
-            for(cJSON *propNode = tileNode->child; propNode != nullptr; propNode = propNode->next) {
-                tile.properties.emplace_back();
-                tile.properties.back().parse(*propNode);
-            }
+            tile.properties = Property::readProperties(*tileNode);
         } else if (name == "objectgroup") {
             tile.objectGroup.parse(*tileNode, map);
         } else if (name == "image") {
@@ -444,6 +406,8 @@ void Tileset::parseTileNode(const cJSON& node, Map* map)
                 }
                 tile.animation.frames.push_back(frame);
             }
+        } else {
+            LOG("Tileset: could not parse node " + name, tmx::Logger::Type::Warning);
         }
     }
     

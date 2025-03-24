@@ -10,7 +10,7 @@ bool Parsable::parse(const cJSON &node, tmx::Map *map)
     bool retval = true;
     for(cJSON *child = node.child; child != nullptr; child = child->next) {
         if(!parseChild(*child, map)) {
-            std::wstringstream logmsg;
+            std::stringstream logmsg;
             logmsg << "Failed to parse node: " << child->string;
             LOG(logmsg.str().c_str(), tmx::Logger::Type::Error);
             retval = false;

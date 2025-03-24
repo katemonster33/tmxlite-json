@@ -57,9 +57,11 @@ namespace tmx
     public:
         using Ptr = std::unique_ptr<Layer>;
 
-        Layer() : m_opacity(1.f), m_visible(true) {};
+        Layer() : m_opacity(1.f), m_visible(true), m_id(-1) {};
         virtual ~Layer() = default;
 
+        static std::unique_ptr<tmx::Layer> readLayer(const struct cJSON &node, tmx::Map* map = nullptr);
+        static std::vector<std::unique_ptr<tmx::Layer>> readLayers(const struct cJSON &node, tmx::Map* map = nullptr);
         /*!
         \brief Layer type as returned by getType()
         Tile: this layer is a TileLayer type
@@ -121,6 +123,8 @@ namespace tmx
         */
         const Vector2i& getOffset() const { return m_offset; }
 
+        const Vector2i& getStart() const { return m_start; }
+
         /*!
         \brief Returns the parallax factor
         */
@@ -143,6 +147,8 @@ namespace tmx
         */
         const std::vector<Property>& getProperties() const { return m_properties; }
 
+        int getId() { return m_id; }
+
     protected:
 
         void setName(const std::string& name) { m_name = name; }
@@ -155,11 +161,13 @@ namespace tmx
         //void addProperty(const pugi::xml_node& node) { m_properties.emplace_back(); m_properties.back().parse(node); }
 
     private:
+        int m_id;
         std::string m_name;
         std::string m_class;
         float m_opacity;
         bool m_visible;
         Vector2i m_offset;
+        Vector2i m_start;
         Vector2f m_parallaxFactor;
         Colour m_tintColour = { 255,255,255,255 };
         Vector2u m_size;

@@ -41,6 +41,17 @@ Property::Property()
 {
 }
 
+std::vector<Property> Property::readProperties(const cJSON &node)
+{
+    std::vector<Property> output;
+    for(cJSON* propNode = node.child; propNode != nullptr; propNode = propNode->next)
+    {
+        output.emplace_back();
+        output.back().parse(*propNode);
+    }
+    return output;
+}
+
 Property Property::fromBoolean(bool value)
 {
     Property p;

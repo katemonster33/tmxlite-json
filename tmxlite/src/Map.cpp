@@ -49,7 +49,8 @@ Map::Map()
     m_infinite      (false),
     m_hexSideLength (0.f),
     m_staggerAxis   (StaggerAxis::None),
-    m_staggerIndex  (StaggerIndex::None)
+    m_staggerIndex  (StaggerIndex::None),
+    m_compressionLevel(-1)
 {
 
 }
@@ -71,10 +72,8 @@ bool Map::loadFromString(const std::string& data, const std::string& workingDir)
     reset();
 
     //open the doc
-    std::unique_ptr<cJSON> doc;
-    auto result = cJSON_Parse(data.c_str());
-    if (!result)
-    {
+    cJSON* doc = cJSON_Parse(data.c_str());
+    if (!doc) {
         Logger::log("Failed opening map", Logger::Type::Error);
         return false;
     }
@@ -84,229 +83,127 @@ bool Map::loadFromString(const std::string& data, const std::string& workingDir)
     std::replace(m_workingDirectory.begin(), m_workingDirectory.end(), '\\', '/');
 
     if (!m_workingDirectory.empty() &&
-        m_workingDirectory.back() == '/')
-    {
+        m_workingDirectory.back() == '/') {
         m_workingDirectory.pop_back();
     }
-
-    //find the map node and bail if it doesn't exist
-    cJSON* mapNode = nullptr;
-    for(cJSON *child = doc->child; child != nullptr; child = child->next)
-    {
-        if(std::string(child->string) == "map")
-        {
-            mapNode = child;
-            break;
-        }
-    }
-    if (!mapNode)
-    {
-        Logger::log("Failed opening map: no map node found", Logger::Type::Error);
-        return reset();
-    }
-
-    return parseMapNode(mapNode);
+    bool parseSuccess = parseMapNode(*doc);
+    cJSON_Delete(doc);
+    return parseSuccess;
 }
 
 //private
 bool Map::parseMapNode(const cJSON& mapNode)
 {
     //parse map attributes
-    std::size_t pointPos = 0;
-    std::string attribString = mapNode.attribute("version").as_string();
-    if (attribString.empty() || (pointPos = attribString.find('.')) == std::string::npos)
-    {
-        Logger::log("Invalid map version value, map not loaded.", Logger::Type::Error);
-        return reset();
+    for(cJSON *child = mapNode.child; child != nullptr; child = child->next) {
+        std::string childname = child->string;
+        if(childname == "compressionlevel") {
+            m_compressionLevel = int(child->valuedouble);
+        } else if(childname == "version") {
+            std::size_t pointPos = 0;
+            std::string versionString = child->valuestring;
+            if (versionString.empty() || (pointPos = versionString.find('.')) == std::string::npos) {
+                Logger::log("Invalid map version value, map not loaded.", Logger::Type::Error);
+                return reset();
+            }
+        
+            m_version.upper = STOI(versionString.substr(0, pointPos));
+            m_version.lower = STOI(versionString.substr(pointPos + 1));
+        } else if(childname == "class") {
+            m_class = child->valuestring;
+        } else if(childname == "orientation") {
+            std::string orientation = child->valuestring;
+            if (orientation == "orthogonal") {
+                m_orientation = Orientation::Orthogonal;
+            } else if (orientation == "isometric") {
+                m_orientation = Orientation::Isometric;
+            } else if (orientation == "staggered") {
+                m_orientation = Orientation::Staggered;
+            } else if (orientation == "hexagonal") {
+                m_orientation = Orientation::Hexagonal;
+            } else {
+                Logger::log(orientation + " format maps aren't supported yet, sorry! Map not loaded", Logger::Type::Error);
+                return reset();
+            }
+        } else if(childname == "renderorder") {
+            std::string renderorder = child->valuestring;
+            if (renderorder == "right-down") {
+                m_renderOrder = RenderOrder::RightDown;
+            } else if (renderorder == "right-up") {
+                m_renderOrder = RenderOrder::RightUp;
+            } else if (renderorder == "left-down") {
+                m_renderOrder = RenderOrder::LeftDown;
+            } else if (renderorder == "left-up") {
+                m_renderOrder = RenderOrder::LeftUp;
+            } else {
+                Logger::log(renderorder + ": invalid render order. Map not loaded.", Logger::Type::Error);
+                return reset();
+            }
+        } else if(childname == "infinite") {
+            m_infinite = child->type == cJSON_True;
+        } else if(childname == "width") {
+            m_tileCount.x = int(child->valuedouble);
+        } else if(childname == "height") {
+            m_tileCount.y = int(child->valuedouble);
+        } else if(childname == "tilewidth") {
+            m_tileSize.x = int(child->valuedouble);
+        } else if(childname == "tileheight") {
+            m_tileSize.y = int(child->valuedouble);
+        } else if(childname == "hexsidelength") {
+            m_hexSideLength = float(child->valuedouble);
+        } else if(childname == "staggeraxis") {
+            std::string staggeraxis = child->valuestring;
+            if (staggeraxis == "x") {
+                m_staggerAxis = StaggerAxis::X;
+            } else if (staggeraxis == "y") {
+                m_staggerAxis = StaggerAxis::Y;
+            }
+        } else if(childname == "staggerindex") {
+            std::string staggerindex = child->valuestring;
+            if (staggerindex == "odd") {
+                m_staggerIndex = StaggerIndex::Odd;
+            } else if (staggerindex == "even") {
+                m_staggerIndex = StaggerIndex::Even;
+            }
+        } else if(childname == "parallaxoriginx") {
+            m_parallaxOrigin.x = int(child->valuedouble);
+        } else if(childname == "parallaxoriginy") {
+            m_parallaxOrigin.y = int(child->valuedouble);
+        } else if(childname == "backgroundcolor") {
+            m_backgroundColour = colourFromString(child->valuestring);
+        } else if(childname == "properties") {
+            m_properties = Property::readProperties(*child);
+        } else if(childname == "layers") {
+            m_layers = Layer::readLayers(*child, this);
+        } else if(childname == "tilesets") {
+            m_tilesets = Tileset::readTilesets(*child, this);
+        } else {
+            LOG("Unidentified name " + childname + ": node skipped", Logger::Type::Warning);
+        }
     }
 
-    m_version.upper = STOI(attribString.substr(0, pointPos));
-    m_version.lower = STOI(attribString.substr(pointPos + 1));
-
-    m_class = mapNode.attribute("class").as_string();
-
-    attribString = mapNode.attribute("orientation").as_string();
-    if (attribString.empty())
-    {
+    if (m_orientation == Orientation::None) {
         Logger::log("Missing map orientation attribute, map not loaded.", Logger::Type::Error);
         return reset();
-    }
-
-    if (attribString == "orthogonal")
-    {
-        m_orientation = Orientation::Orthogonal;
-    }
-    else if (attribString == "isometric")
-    {
-        m_orientation = Orientation::Isometric;
-    }
-    else if (attribString == "staggered")
-    {
-        m_orientation = Orientation::Staggered;
-    }
-    else if (attribString == "hexagonal")
-    {
-        m_orientation = Orientation::Hexagonal;
-    }
-    else
-    {
-        Logger::log(attribString + " format maps aren't supported yet, sorry! Map not loaded", Logger::Type::Error);
-        return reset();
-    }
-
-    attribString = mapNode.attribute("renderorder").as_string();
-    //this property is optional for older version of map files
-    if (!attribString.empty())
-    {
-        if (attribString == "right-down")
-        {
-            m_renderOrder = RenderOrder::RightDown;
-        }
-        else if (attribString == "right-up")
-        {
-            m_renderOrder = RenderOrder::RightUp;
-        }
-        else if (attribString == "left-down")
-        {
-            m_renderOrder = RenderOrder::LeftDown;
-        }
-        else if (attribString == "left-up")
-        {
-            m_renderOrder = RenderOrder::LeftUp;
-        }
-        else
-        {
-            Logger::log(attribString + ": invalid render order. Map not loaded.", Logger::Type::Error);
-            return reset();
-        }
-    }
-
-    if (mapNode.attribute("infinite"))
-    {
-        m_infinite = mapNode.attribute("infinite").as_int() != 0;
-    }
-
-    unsigned width = mapNode.attribute("width").as_int();
-    unsigned height = mapNode.attribute("height").as_int();
-    if (width && height)
-    {
-        m_tileCount = { width, height };
-    }
-    else
-    {
+    } else if(m_tileCount.x == 0 || m_tileCount.y == 0) {
         Logger::log("Invalid map tile count, map not loaded", Logger::Type::Error);
         return reset();
-    }
-
-    width = mapNode.attribute("tilewidth").as_int();
-    height = mapNode.attribute("tileheight").as_int();
-    if (width && height)
-    {
-        m_tileSize = { width, height };
-    }
-    else
-    {
+    } else if(m_tileSize.x == 0 || m_tileSize.y == 0) {
         Logger::log("Invalid tile size, map not loaded", Logger::Type::Error);
         return reset();
-    }
-
-    m_hexSideLength = mapNode.attribute("hexsidelength").as_float();
-    if (m_orientation == Orientation::Hexagonal && m_hexSideLength <= 0)
-    {
+    } else if (m_orientation == Orientation::Hexagonal && m_hexSideLength <= 0) {
         Logger::log("Invalid he side length found, map not loaded", Logger::Type::Error);
         return reset();
-    }
-
-    attribString = mapNode.attribute("staggeraxis").as_string();
-    if (attribString == "x")
-    {
-        m_staggerAxis = StaggerAxis::X;
-    }
-    else if (attribString == "y")
-    {
-        m_staggerAxis = StaggerAxis::Y;
-    }
-    if ((m_orientation == Orientation::Staggered || m_orientation == Orientation::Hexagonal)
-        && m_staggerAxis == StaggerAxis::None)
-    {
+    } else if ((m_orientation == Orientation::Staggered || m_orientation == Orientation::Hexagonal)
+        && m_staggerAxis == StaggerAxis::None) {
         Logger::log("Map missing stagger axis property. Map not loaded.", Logger::Type::Error);
         return reset();
-    }
-
-    attribString = mapNode.attribute("staggerindex").as_string();
-    if (attribString == "odd")
-    {
-        m_staggerIndex = StaggerIndex::Odd;
-    }
-    else if (attribString == "even")
-    {
-        m_staggerIndex = StaggerIndex::Even;
-    }
-    if ((m_orientation == Orientation::Staggered || m_orientation == Orientation::Hexagonal)
-        && m_staggerIndex == StaggerIndex::None)
-    {
+    } else if ((m_orientation == Orientation::Staggered || m_orientation == Orientation::Hexagonal)
+        && m_staggerIndex == StaggerIndex::None) {
         Logger::log("Map missing stagger index property. Map not loaded.", Logger::Type::Error);
         return reset();
     }
 
-    m_parallaxOrigin =
-    {
-        mapNode.attribute("parallaxoriginx").as_float(0.f),
-        mapNode.attribute("parallaxoriginy").as_float(0.f)
-    };
-
-    //colour property is optional
-    attribString = mapNode.attribute("backgroundcolor").as_string();
-    if (!attribString.empty())
-    {
-        m_backgroundColour = colourFromString(attribString);
-    }
-
-    //TODO do we need next object ID
-
-    //parse all child nodes
-    for (const auto& node : mapNode.children())
-    {
-        std::string name = node.name();
-        if (name == "tileset")
-        {
-            m_tilesets.emplace_back(m_workingDirectory);
-            m_tilesets.back().parse(node, this);
-        }
-        else if (name == "layer")
-        {
-            m_layers.emplace_back(std::make_unique<TileLayer>(m_tileCount.x * m_tileCount.y));
-            m_layers.back()->parse(node);
-        }
-        else if (name == "objectgroup")
-        {
-            m_layers.emplace_back(std::make_unique<ObjectGroup>());
-            m_layers.back()->parse(node, this);
-        }
-        else if (name == "imagelayer")
-        {
-            m_layers.emplace_back(std::make_unique<ImageLayer>(m_workingDirectory));
-            m_layers.back()->parse(node, this);
-        }
-        else if (name == "properties")
-        {
-            const auto& children = node.children();
-            for (const auto& child : children)
-            {
-                m_properties.emplace_back();
-                m_properties.back().parse(child);
-            }
-        }
-        else if (name == "group")
-        {
-            m_layers.emplace_back(std::make_unique<LayerGroup>(m_workingDirectory, m_tileCount));
-            m_layers.back()->parse(node, this);
-        }
-        else
-        {
-            LOG("Unidentified name " + name + ": node skipped", Logger::Type::Warning);
-        }
-    }
     // fill animated tiles for easier lookup into map
     for(const auto& ts : m_tilesets)
     {
